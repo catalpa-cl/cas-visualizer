@@ -11,6 +11,12 @@ import streamlit as st
 
 import util as util
 
+class AnnoObject:
+    def __init__(self, anno_begin, anno_end, anno_type, anno_text):
+        self.anno_begin = anno_begin
+        self.anno_end = anno_end
+        self.anno_type = anno_type
+        self.anno_text = anno_text
 
 class VisualisationConfig:
     def __init__(self,
@@ -121,6 +127,67 @@ class TableVisualiser(Visualiser):
     
 class SpanVisualiser(Visualiser):
     def render_visualisation(self):
-    
-        return st.write()
 
+        cas_text = self.cas.sofa_string
+
+        allTypes = []
+        unsortedAnnos = []
+        for cfg in self.visualisation_configs:
+            typePath, featPath = util.resolve_annotation(cfg.annotation)
+
+            for item in self.cas.select(typePath):
+                annoobject = AnnoObject(item.begin, item.end, getattr(item, featPath), item.get_covered_text())
+                unsortedAnnos.append(annoobject)
+
+                # get all possible Types
+                if getattr(item, featPath) not in allTypes:
+                    allTypes.append(getattr(item, featPath))
+
+        sortedAnnos = sorted(unsortedAnnos, key=lambda x: x.anno_begin, reverse=False)
+
+        # currently configured to show all types at visualization time (TODO: make configurable)
+        selectedTypes = st.multiselect("Select Type: ", allTypes, allTypes)
+
+        color_scheme1 = ["skyblue", "orangered", "orange", "plum", "palegreen", "mediumseagreen", "lightseagreen",
+                        "steelblue", "navajowhite", "mediumpurple", "rosybrown", "silver", "gray",
+                        "paleturquoise", "blue", "blue", "blue", "blue", "blue", "blue", "blue", "blue", "blue", "blue"]
+
+        colorMapping = {}  # for the type-color display above the text
+
+        # assign each type a unique color
+        for my_type in allTypes:
+            colorMapping[my_type] = color_scheme1[allTypes.index(my_type)]
+
+        #create legend
+        legend = ''
+        for type in selectedTypes:
+            legend = legend + addAnnotationVisHTML(type, colorMapping[type])
+        
+        st.write(legend, unsafe_allow_html=True)
+
+        revSortAnnos = sorted(sortedAnnos, key=lambda x: x.anno_begin, reverse=True)
+        textToPrint = cas_text
+
+        for anno in revSortAnnos:
+            if anno.anno_type in selectedTypes:
+                htmlend = "</span> "
+                htmlstart = "<span style=\"border-radius: 25px; padding-left:8px; padding-right:8px; background-color: " + \
+                            str(colorMapping[anno.anno_type]) + "\">"
+
+                textToPrint = textToPrint[:anno.anno_end] + htmlend + textToPrint[anno.anno_end:]
+                textToPrint = textToPrint[:anno.anno_begin] + htmlstart + textToPrint[anno.anno_begin:]
+
+
+        textToPrint = textToPrint.replace('\n', '<br>')
+
+        st.write(textToPrint, unsafe_allow_html=True)
+        
+
+# quick method to wrap the html part around a token (assign background color)
+# can be modified like normal HTML
+def addAnnotationVisHTML(text, color):
+    if color != 'noColor':
+        return "<span style=\"border-radius: 25px; padding-left:10px; padding-right:10px; background-color: " + \
+            str(color) + "\">" + str(text) + "</span> "
+    else:
+        return text + ' '

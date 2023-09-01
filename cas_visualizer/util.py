@@ -44,7 +44,7 @@ def cas_from_string(cas: str, typesystem) -> cassis.Cas:
     with open(cas, 'rb') as f:
         return cassis.load_cas_from_xmi(f, typesystem)
 
-def resolve_annotation(annotation_path: str, feature_seperator='/'):
+def resolve_annotation(annotation_path: str, feature_seperator='/') -> tuple[str, str]:
     if feature_seperator == '.':
         raise ValueError('Feature separator must not be "."')
 
@@ -55,7 +55,7 @@ def resolve_annotation(annotation_path: str, feature_seperator='/'):
 
     # no feature in annotation path
     if len(split) == 1:
-        return split[0], None
+        return split[0], ''
 
     type_path, feature_path = split
 
