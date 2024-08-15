@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 import util as util
+import spacy_helper as sh
 
 class AnnoObject:
     def __init__(self, anno_begin, anno_end, anno_type, anno_text):
@@ -191,3 +192,28 @@ def addAnnotationVisHTML(text, color):
             str(color) + "\">" + str(text) + "</span> "
     else:
         return text + ' '
+
+
+class SpacySpanVisualiser(Visualiser):
+    SPAN_STYLE_HIGHLIGHTING = 'SPAN_STYLE_HIGHLIGHTING'
+    SPAN_STYLE_UNDERLINING = 'SPAN_STYLE_UNDERLINING'
+
+    _span_type = ""
+    _selected_annotations_to_types = dict()
+    _annotations_to_colors = dict()
+
+    def set_annotations_to_colors(self, annotations_to_colors):
+        self._annotations_to_colors = annotations_to_colors
+
+    def set_selected_annotations_to_types(self, selected_annotations_to_types):
+        self._selected_annotations_to_types = selected_annotations_to_types
+
+    def set_span_type(self, span_type):
+        self._span_type = span_type
+
+    def render_visualisation(self):
+        if self._span_type == SpacySpanVisualiser.SPAN_STYLE_HIGHLIGHTING:
+            html = sh.parse_ents(self.cas, self._selected_annotations_to_types, self._annotations_to_colors)
+        elif self._span_type == SpacySpanVisualiser.SPAN_STYLE_UNDERLINING:
+            html = sh.parse_spans(self.cas, self._selected_annotations_to_types, self._annotations_to_colors)
+        st.write(html, unsafe_allow_html=True)
