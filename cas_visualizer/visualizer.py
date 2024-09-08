@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-import util as util
-import spacy_helper as sh
+from cas_visualizer import util as util
+from cas_visualizer import spacy_helper as sh
 
 class AnnoObject:
     def __init__(self, anno_begin, anno_end, anno_type, anno_text):
