@@ -2,7 +2,7 @@ from cassis import Cas
 import spacy
 
 
-def parse_ents(cas: Cas, labels_to_types: dict, labels_to_colors: dict) -> str: # see parse_ents spaCy/spacy/displacy/__init__.py
+def parse_ents(cas: Cas, labels_to_types: dict, labels_to_colors: dict): # see parse_ents spaCy/spacy/displacy/__init__.py
     tmp_ents = []
     for label in labels_to_types.keys():
         for ent in cas.select(labels_to_types[label]):
@@ -13,8 +13,29 @@ def parse_ents(cas: Cas, labels_to_types: dict, labels_to_colors: dict) -> str: 
                     "label": label.upper()
                 }
             )
-    tmp_ents.sort(key=lambda x: x["start"])
-    return spacy.displacy.EntityRenderer({"colors": labels_to_colors}).render_ents(cas.sofa_string, tmp_ents, "")
+    tmp_ents.sort(key=lambda x: (x['start'], x['end']))
+    has_overlap = check_overlap(tmp_ents)
+    return (spacy.displacy.EntityRenderer({"colors": labels_to_colors}).render_ents(cas.sofa_string, tmp_ents, ""),
+            has_overlap)
+
+
+# requires a sorted list of "tmp_ents" as returned by tmp_ents.sort(key=lambda x: (x['start'], x['end']))
+def check_overlap(l_ents):
+    for i in range(len(l_ents)):
+        start_i = l_ents[i]['start']
+        for j in range(len(l_ents)):
+            if i != j:
+                start_j = l_ents[j]['start']
+                end_j = l_ents[j]['end']
+                if start_i > end_j:
+                    continue
+                if start_i == start_j:
+                    return True
+                if start_i == end_j:
+                    return True
+                if start_j < start_i < end_j:
+                    return True
+    return False
 
 
 def create_tokens(cas_sofa_string: str, feature_structures: []) -> []:
