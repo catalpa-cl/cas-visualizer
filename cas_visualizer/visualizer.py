@@ -201,6 +201,7 @@ class SpacySpanVisualiser(Visualiser):
     _span_type = ""
     _selected_annotations_to_types = dict()
     _annotations_to_colors = dict()
+    _allow_highlighting_overlap = False
 
     def set_annotations_to_colors(self, annotations_to_colors):
         self._annotations_to_colors = annotations_to_colors
@@ -211,11 +212,14 @@ class SpacySpanVisualiser(Visualiser):
     def set_span_type(self, span_type):
         self._span_type = span_type
 
+    def set_allow_highlighting_overlap(self, allow_highlighting_overlap):
+        self._allow_highlighting_overlap = allow_highlighting_overlap
+
     def render_visualisation(self):
         show_overlap = False
         if self._span_type == SpacySpanVisualiser.SPAN_STYLE_HIGHLIGHTING:
             html, has_overlap = sh.parse_ents(self.cas, self._selected_annotations_to_types, self._annotations_to_colors)
-            if has_overlap:
+            if has_overlap and not self._allow_highlighting_overlap:
                 st.error('The highlighted annotations are overlapping. Please choose a different set of annotations for this display style or switch to a different style.')
                 return
         elif self._span_type == SpacySpanVisualiser.SPAN_STYLE_UNDERLINING:
