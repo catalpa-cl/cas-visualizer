@@ -13,7 +13,7 @@ pandas = "^2.0.2"
 streamlit = "^1.23.1"
 altair = "^5.0.1"
 watchdog = "^3.0.0"
-dkpro-cassis = "0.8.0"
+dkpro-cassis = "^0.9.1"
 pytest = "^7.4.0"
 spacy = "3.7.5"
 
