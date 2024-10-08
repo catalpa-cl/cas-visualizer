@@ -7,15 +7,14 @@ readme = "README.md"
 packages = [{include = "cas_visualizer"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
-numpy = "^1.25.0"
-pandas = "^2.0.2"
-streamlit = "^1.23.1"
-altair = "^5.0.1"
-watchdog = "^3.0.0"
-dkpro-cassis = "^0.9.1"
-pytest = "^7.4.0"
-spacy = "3.7.5"
+python = "^3.12"
+numpy = "2.0.0"
+pandas = "2.2.3"
+streamlit = "1.39.0"
+watchdog = "5.0.3"
+dkpro-cassis = "0.9.1"
+pytest = "8.3.3"
+spacy = "3.8.2"
 
 
 [build-system]
