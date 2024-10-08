@@ -7,7 +7,6 @@ import typing
 import cassis
 import numpy as np
 import pandas as pd
-import streamlit as st
 
 from cas_visualizer import util as util
 from cas_visualizer import spacy_helper as sh
@@ -91,18 +90,8 @@ class Visualiser(abc.ABC):
             values.append(np.unique(vs).tolist())
         return values
 
-    def visualise(self, streamlit_context=None):
-        """Generates the visualisation based on the provided configuration in the provided context.
-
-        :arg streamlit_context: A streamlit context to render the visualisation in.
-            Must implement the context provider protocol.
-            If not provided, the global streamlit context should be used.
-        """
-        if streamlit_context is None: # render wherever the function is called in the global context.
-            self.render_visualisation()
-        else:
-            with streamlit_context: # render within the given container
-                self.render_visualisation()
+    def visualise(self):
+        return self.render_visualisation()
 
     @abc.abstractmethod
     def render_visualisation(self):
@@ -124,7 +113,7 @@ class TableVisualiser(Visualiser):
                 })
 
         df = pd.DataFrame.from_records(records).sort_values(by=['begin', 'end'])
-        return st.table(df)
+        return df
     
 class SpanVisualiser(Visualiser):
     def render_visualisation(self):
@@ -147,7 +136,7 @@ class SpanVisualiser(Visualiser):
         sortedAnnos = sorted(unsortedAnnos, key=lambda x: x.anno_begin, reverse=False)
 
         # currently configured to show all types at visualization time (TODO: make configurable)
-        selectedTypes = st.multiselect("Select Type: ", allTypes, allTypes)
+        selectedTypes = allTypes
 
         color_scheme1 = ["skyblue", "orangered", "orange", "plum", "palegreen", "mediumseagreen", "lightseagreen",
                         "steelblue", "navajowhite", "mediumpurple", "rosybrown", "silver", "gray",
@@ -163,8 +152,6 @@ class SpanVisualiser(Visualiser):
         legend = ''
         for type in selectedTypes:
             legend = legend + addAnnotationVisHTML(type, colorMapping[type])
-        
-        st.write(legend, unsafe_allow_html=True)
 
         revSortAnnos = sorted(sortedAnnos, key=lambda x: x.anno_begin, reverse=True)
         textToPrint = cas_text
@@ -181,7 +168,7 @@ class SpanVisualiser(Visualiser):
 
         textToPrint = textToPrint.replace('\n', '<br>')
 
-        st.write(textToPrint, unsafe_allow_html=True)
+        return (legend, textToPrint)
         
 
 # quick method to wrap the html part around a token (assign background color)
@@ -193,6 +180,8 @@ def addAnnotationVisHTML(text, color):
     else:
         return text + ' '
 
+class VisualiserException(Exception):
+    pass
 
 class SpacySpanVisualiser(Visualiser):
     SPAN_STYLE_HIGHLIGHTING = 'SPAN_STYLE_HIGHLIGHTING'
@@ -220,8 +209,7 @@ class SpacySpanVisualiser(Visualiser):
         if self._span_type == SpacySpanVisualiser.SPAN_STYLE_HIGHLIGHTING:
             html, has_overlap = sh.parse_ents(self.cas, self._selected_annotations_to_types, self._annotations_to_colors)
             if has_overlap and not self._allow_highlighting_overlap:
-                st.error('The highlighted annotations are overlapping. Please choose a different set of annotations for this display style or switch to a different style.')
-                return
+                raise VisualiserException('The highlighted annotations are overlapping. Please choose a different set of annotations for this display style or switch to a different style.')
         elif self._span_type == SpacySpanVisualiser.SPAN_STYLE_UNDERLINING:
             html = sh.parse_spans(self.cas, self._selected_annotations_to_types, self._annotations_to_colors)
-        st.write(html, unsafe_allow_html=True)
+        return html
