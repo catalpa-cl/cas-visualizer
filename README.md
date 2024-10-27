@@ -32,5 +32,5 @@ Using `streamlit` we can then render it.
 
 E.g. `st.write(html, unsafe_allow_html=True)`: 
 
-![Screenshot_1](/img/readme_img.png)
+![Screenshot_1](https://raw.githubusercontent.com/catalpa-cl/cas-visualizer/5619438ed444b62392f76ac7151ee6c7c9d8ea61/img/readme_img.png)
 
