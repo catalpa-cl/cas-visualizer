@@ -34,3 +34,11 @@ E.g. `st.write(html, unsafe_allow_html=True)`:
 
 ![Screenshot_1](https://raw.githubusercontent.com/catalpa-cl/cas-visualizer/5619438ed444b62392f76ac7151ee6c7c9d8ea61/img/readme_img.png)
 
+### How to publish
+
+1) Increase the version number in `pyproject.toml`
+2) Run `poetry build`
+3) [Optional] If no token is configured:
+   * Create an API-Token by visiting: https://pypi.org/manage/account/#api-tokens
+   * Replace `TOKEN` with the string of the API-Token and run `poetry config pypi-token.pypi TOKEN`
+4) Run `poetry publish`
