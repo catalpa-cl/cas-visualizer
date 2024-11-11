@@ -5,7 +5,6 @@ import functools
 import typing
 
 import cassis
-import numpy as np
 import pandas as pd
 
 from cas_visualizer import util as util
