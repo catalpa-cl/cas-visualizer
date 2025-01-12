@@ -3,9 +3,9 @@ import streamlit as st
 import pathlib
 import sys
 
-from visualizer import VisualisationConfig, TableVisualiser, SpanVisualiser, SpacySpanVisualiser, VisualiserException
-import api
-import util as util
+from cas_visualizer.visualizer import VisualisationConfig, TableVisualiser, SpanVisualiser, SpacySpanVisualiser, VisualiserException
+import cas_visualizer.api
+import cas_visualizer.util as util
 import cassis.typesystem as types
 
 p = pathlib.Path(__file__).absolute()/ '..' /'src'
