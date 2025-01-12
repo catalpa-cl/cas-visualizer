@@ -4,7 +4,7 @@ The `cas_visualizer`library can be used to transform a `cassis.Cas` object into 
 
 ## Quick start
 
-##### from [self-contained example](examples/spacy_visualization_example.py) :
+##### from [self-contained example](https://github.com/catalpa-cl/cas-visualizer/blob/3bd8cb9454010a48e274deb88c4c80b39e1c17e9/examples/spacy_visualization_example.py) :
 We start out with a `cassis.Cas` object that contains the following text:
 
 ```
