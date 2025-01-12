@@ -4,6 +4,7 @@ The `cas_visualizer`library can be used to transform a `cassis.Cas` object into 
 
 ## Quick start
 
+##### from [self-contained example](examples/spacy_visualization_example.py) :
 We start out with a `cassis.Cas` object that contains the following text:
 
 ```
@@ -22,7 +23,7 @@ from visualizer import SpacySpanVisualiser
 spacy_span_vis = SpacySpanVisualiser(cas, [])
 annotation = 'de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity'
 
-spacy_span_vis.set_selected_annotations_to_types({'NAMED_ENTITY': annotation)
+spacy_span_vis.set_selected_annotations_to_types({'NAMED_ENTITY': annotation})
 spacy_span_vis.set_annotations_to_colors({'NAMED_ENTITY': 'lightgreen'})
 spacy_span_vis.set_span_type(SpacySpanVisualiser.SPAN_STYLE_HIGHLIGHTING)
 
