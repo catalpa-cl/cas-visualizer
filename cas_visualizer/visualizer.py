@@ -97,6 +97,9 @@ class Visualiser(abc.ABC):
         """Generates the visualisation based on the provided configuration."""
         raise NotImplementedError
 
+    def set_cas(self, cas:cassis.Cas):
+        self.cas = cas
+
 
 class TableVisualiser(Visualiser):
     def render_visualisation(self):
