@@ -2,9 +2,9 @@ import typing
 from pathlib import Path
 
 import cassis
-from util import load_cas
+from cas_visualizer.util import load_cas
 
-from visualizer import TableVisualiser, SpanVisualiser, VisualisationConfig
+from cas_visualizer.visualizer import TableVisualiser, SpanVisualiser, VisualisationConfig
 
 def highlight(cas: typing.Union[cassis.Cas, str, Path],
               typesystem: typing.Union[cassis.TypeSystem, str, Path],
