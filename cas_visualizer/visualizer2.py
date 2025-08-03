@@ -2,29 +2,29 @@ import abc
 import pandas as pd
 from spacy.displacy import EntityRenderer, SpanRenderer
 
-from cas_visualizer.util import load_cas
-from cassis import Cas
+from cas_visualizer.util import cas_from_string, load_typesystem
+from cassis import Cas, TypeSystem
 from cassis.typesystem import FeatureStructure
 
 
 class Visualizer(abc.ABC):
-    def __init__(self):
+    def __init__(self, ts: TypeSystem):
         self._cas = None
+        self._ts = None
         self._types = set()
         self._colors = dict()
         self._labels = dict()
         self._features = dict()
-        self._default_colors = iter(["orangered", "orange", "plum", "palegreen", "mediumseagreen", "lightseagreen",
+        self._default_colors = iter(["lightgreen", "orangered", "orange", "plum", "palegreen", "mediumseagreen",
                        "steelblue", "skyblue", "navajowhite", "mediumpurple", "rosybrown", "silver", "gray",
                        "paleturquoise"])
-
-    @property
-    def cas(self):
-        return self._cas
-
-    @cas.setter
-    def cas(self, value:Cas):
-        self._cas = value
+        match ts:
+            case str():
+                self._ts = load_typesystem(ts)
+            case TypeSystem():
+                self._ts = ts
+            case _:
+                raise VisualizerException('typesystem cannot be None')
 
     @property
     def types_to_colors(self) -> dict:
@@ -47,17 +47,17 @@ class Visualizer(abc.ABC):
         """Generates the visualization based on the provided configuration."""
         raise NotImplementedError
 
-    def add_type(self, type_path, feature_name=None, color=None, default_label=None):
-        if type_path is None or len(type_path) == 0:
+    def add_type(self, type_name, feature_name=None, color=None, default_label=None):
+        if type_name is None or len(type_name) == 0:
             raise TypeError('type path cannot be empty')
-        self._types.add(type_path)
-        self._features[type_path] = feature_name
+        self._types.add(type_name)
+        self._features[type_name] = feature_name
         if color is None:
             color = next(self._default_colors)
-        self._colors[type_path] = color
+        self._colors[type_name] = color
         if default_label is None or len(default_label) == 0:
-            default_label = type_path.split('.')[-1]
-        self._labels[type_path] = default_label
+            default_label = type_name.split('.')[-1]
+        self._labels[type_name] = default_label
 
     def add_types_from_list_of_dict(self, config_list: list):
         for item in config_list:
@@ -71,9 +71,6 @@ class Visualizer(abc.ABC):
     def get_feature_value(fs:FeatureStructure, feature_name:str):
         return fs.get(feature_name) if feature_name is not None else None
 
-    def load_cas(self, cas_file_path, typesystem_file_path):
-        self._cas = load_cas(cas_file_path, typesystem_file_path)
-
     def remove_type(self, type_path):
         if type_path is None:
             raise VisualizerException('type path cannot be empty')
@@ -85,7 +82,14 @@ class Visualizer(abc.ABC):
         except:
             raise VisualizerException('type path cannot be found')
 
-    def visualize(self):
+    def visualize(self, cas: Cas|str):
+        match cas:
+            case str():
+                self._cas = cas_from_string(cas, self._ts)
+            case Cas():
+                self._cas = cas
+            case _:
+                raise VisualizerException('cas cannot be None')
         return self.render_visualization()
 
 class VisualizerException(Exception):
@@ -96,7 +100,7 @@ class TableVisualizer(Visualizer):
     def render_visualization(self):
         records = []
         for type_item in self.type_list:
-            for fs in self.cas.select(type_item):
+            for fs in self._cas.select(type_item):
                 feature_value = Visualizer.get_feature_value(fs, self.types_to_features[type_item])
                 records.append({
                     'text': fs.get_covered_text(),
@@ -113,8 +117,8 @@ class SpanVisualizer(Visualizer):
     HIGHLIGHT = 'HIGHLIGHT'
     UNDERLINE = 'UNDERLINE'
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, ts: TypeSystem):
+        super().__init__(ts)
         self._span_types = [SpanVisualizer.HIGHLIGHT, SpanVisualizer.UNDERLINE]
         self._selected_span_type = SpanVisualizer.UNDERLINE
         self._allow_highlight_overlap = False
@@ -159,7 +163,7 @@ class SpanVisualizer(Visualizer):
         labels_to_colors = dict()
         for annotation_type, annotation_label in self.types_to_labels.items():
             annotation_feature = self.types_to_features[annotation_type]
-            for fs in self.cas.select(annotation_type):
+            for fs in self._cas.select(annotation_type):
                 label = self.get_label(fs, annotation_label, annotation_feature)
                 tmp_ents.append(
                     {
@@ -174,7 +178,7 @@ class SpanVisualizer(Visualizer):
             raise VisualizerException(
                 'The highlighted annotations are overlapping. Please choose a different set of annotations or switch display style to underline.')
 
-        return EntityRenderer({"colors": labels_to_colors}).render_ents(self.cas.sofa_string, tmp_ents, "")
+        return EntityRenderer({"colors": labels_to_colors}).render_ents(self._cas.sofa_string, tmp_ents, "")
 
     # requires a sorted list of "tmp_ents" as returned by tmp_ents.sort(key=lambda x: (x['start'], x['end']))
     @staticmethod
@@ -209,7 +213,7 @@ class SpanVisualizer(Visualizer):
     def create_spans(self, cas_sofa_tokens: list, annotation_type: str, annotation_feature: str,
                      annotation_label: str) -> list[dict[str, str]]:
         tmp_spans = []
-        for fs in self.cas.select(annotation_type):
+        for fs in self._cas.select(annotation_type):
             start_token = 0
             end_token = len(cas_sofa_tokens)
             for idx, token in enumerate(cas_sofa_tokens):
@@ -230,8 +234,8 @@ class SpanVisualizer(Visualizer):
         return tmp_spans
 
     def parse_spans(self) -> str:  # see parse_ents spaCy/spacy/displacy/__init__.py
-        selected_annotations = [item for typeclass in self.type_list for item in self.cas.select(typeclass)]
-        tmp_tokens = self.create_tokens(self.cas.sofa_string, selected_annotations)
+        selected_annotations = [item for typeclass in self.type_list for item in self._cas.select(typeclass)]
+        tmp_tokens = self.create_tokens(self._cas.sofa_string, selected_annotations)
         tmp_token_texts = [_["text"] for _ in sorted(tmp_tokens, key=lambda t: t["start"])]
 
         tmp_spans = []

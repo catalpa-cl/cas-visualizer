@@ -1,37 +1,35 @@
 ## Overview
 
-The `cas_visualizer`library can be used to transform a `cassis.Cas` object into an annotated html string.
+The `cas_visualizer`library can be used to transform a *Common Analysis System (CAS)* data structure into an annotated html string.
 
 ## Quick start
 
 ##### from [self-contained example](https://github.com/catalpa-cl/cas-visualizer/blob/3bd8cb9454010a48e274deb88c4c80b39e1c17e9/examples/spacy_visualization_example.py) :
-We start out with a `cassis.Cas` object that contains the following text:
+We require a *CAS file* or `cassis.Cas` object that contains a text, e.g.:
 
 ```
 Die Fernuniversität in Hagen (Eigenschreibweise: FernUniversität) ist die erste und einzige staatliche Fernuniversität in Deutschland. Ihr Sitz befindet sich in Hagen in Nordrhein-Westfalen. Nach Angaben des Statistischen Bundesamtes war sie, ohne Berücksichtigung von Akademie- und Weiterbildungsstudierenden, mit über 76.000 Studierenden im Wintersemester 2016/2017[3] die größte deutsche Universität.[4]
 ```
 
-and is annotated with a `cassis.TypeSystem` annotation: 
+The *CAS* is based on a *typesystem file* or `cassis.TypeSystem` object and specifies annotation types, e.g.: 
 
 `de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity`
 
-Let's transform this annotation into a `spacy`-styled highlighted html string:
+To transform this annotation into a highlighted html string, we run:
 
 ```
-from visualizer import SpacySpanVisualiser
+from cas_visualizer.visualizer import SpanVisualiser
 
-spacy_span_vis = SpacySpanVisualiser(cas, [])
-annotation = 'de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity'
+cas = '../data/hagen.txt.xmi'
+ts = '../data/TypeSystem.xml'
 
-spacy_span_vis.set_selected_annotations_to_types({'NAMED_ENTITY': annotation})
-spacy_span_vis.set_annotations_to_colors({'NAMED_ENTITY': 'lightgreen'})
-spacy_span_vis.set_span_type(SpacySpanVisualiser.SPAN_STYLE_HIGHLIGHTING)
+span_vis = SpanVisualizer(ts)
 
-html = spacy_span_vis.visualise()
+span_vis.add_type(type_name='NamedEntity')
+
+html = span_vis.visualize(cas)
 ```
-Using `streamlit` we can then render it. 
-
-E.g. `st.write(html, unsafe_allow_html=True)`: 
+Finally, in a browser we can then render it:
 
 ![Screenshot_1](https://raw.githubusercontent.com/catalpa-cl/cas-visualizer/5619438ed444b62392f76ac7151ee6c7c9d8ea61/img/readme_img.png)
 

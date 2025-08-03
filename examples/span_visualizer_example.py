@@ -6,13 +6,13 @@ from cas_visualizer.visualizer2 import SpanVisualizer
 cas = '../data/hagen.txt.xmi'
 ts = '../data/TypeSystem.xml'
 
-span_vis = SpanVisualizer()
-span_vis.load_cas(cas, ts)
+span_vis = SpanVisualizer(ts)
 
-span_vis.add_type(type_path='de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity')
-span_vis.add_type(type_path='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature_name='description')
+span_vis.add_type(type_name='NamedEntity')
+#uncomment to add another annotation
+#span_vis.add_type(type_name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature_name='description')
 
-html = span_vis.visualize()
+html = span_vis.visualize(cas)
 
 ### Render HTML in Browser
 
