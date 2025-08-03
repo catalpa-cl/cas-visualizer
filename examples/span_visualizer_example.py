@@ -10,15 +10,15 @@ span_vis = SpanVisualizer(ts)
 
 span_vis.add_type(type_name='NamedEntity')
 
-#uncomment to add another annotation
+### uncomment to add another annotation
 #span_vis.add_type(type_name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature_name='description')
 
-#uncomment to change span style to highlight
+### uncomment to change span style to highlight
 #span_vis.selected_span_type = "HIGHLIGHT"
 
 html = span_vis.visualize(cas)
 
-### Render HTML in Browser
+### render HTML in Browser
 
 with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='cp1252') as f:
     url = 'file://' + f.name

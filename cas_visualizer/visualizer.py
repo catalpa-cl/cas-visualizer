@@ -1,10 +1,10 @@
 import abc
 import pandas as pd
-from spacy.displacy import EntityRenderer, SpanRenderer
 
 from cas_visualizer.util import cas_from_string, load_typesystem
 from cassis import Cas, TypeSystem
 from cassis.typesystem import FeatureStructure
+from spacy.displacy import EntityRenderer, SpanRenderer
 
 
 class Visualizer(abc.ABC):
@@ -48,6 +48,13 @@ class Visualizer(abc.ABC):
         raise NotImplementedError
 
     def add_type(self, type_name, feature_name=None, color=None, default_label=None):
+        """
+        Adds a new annotation type to the visualizer.
+        :param type_name: name of the annotation type as declared in the type system.
+        :param feature_name: optionally, the value of a feature can be used as the tag label of the visualized annotation
+        :param color: optionally, a specific string color name for the annotation
+        :param default_label: optionally, a specific string label for the annotation (defaults to type_name)
+        """
         if type_name is None or len(type_name) == 0:
             raise TypeError('type path cannot be empty')
         self._types.add(type_name)

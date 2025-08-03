@@ -13,7 +13,7 @@ span_vis.add_type(type_name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.Gram
 
 html = span_vis.visualize(cas).reset_index(drop=True).to_html()
 
-### Render HTML in Browser
+### render HTML in Browser
 
 with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='cp1252') as f:
     url = 'file://' + f.name

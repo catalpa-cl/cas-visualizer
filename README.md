@@ -6,14 +6,16 @@ The library visualizes annotations with an underlined (default) or highlighted s
 
 ## Quick start
 
-##### from [self-contained example](https://github.com/catalpa-cl/cas-visualizer/blob/3bd8cb9454010a48e274deb88c4c80b39e1c17e9/examples/spacy_visualization_example.py) :
-We require a CAS file or `cassis.Cas` object that contains a text, e.g.:
+*(see [self-contained example](https://github.com/catalpa-cl/cas-visualizer/blob/2185cff13e35fc60086ee44640768d28f754146b/examples/span_visualizer_example.py))*
+
+We require a CAS file or `cassis.Cas` object that contains a text, e.g.
 
 ```
-Die Fernuniversität in Hagen (Eigenschreibweise: FernUniversität) ist die erste und einzige staatliche Fernuniversität in Deutschland. Ihr Sitz befindet sich in Hagen in Nordrhein-Westfalen. Nach Angaben des Statistischen Bundesamtes war sie, ohne Berücksichtigung von Akademie- und Weiterbildungsstudierenden, mit über 76.000 Studierenden im Wintersemester 2016/2017[3] die größte deutsche Universität.[4]
+Die Fernuniversität in Hagen (Eigenschreibweise: FernUniversität) ist die erste und einzige staatliche Fernuniversität in Deutschland. Ihr Sitz befindet sich in Hagen in Nordrhein-Westfalen. 
+Nach Angaben des Statistischen Bundesamtes war sie, ohne Berücksichtigung von Akademie- und Weiterbildungsstudierenden, mit über 76.000 Studierenden im Wintersemester 2016/2017[3] die größte deutsche Universität.[4]
 ```
 
-The CAS is based on a typesystem file or `cassis.TypeSystem` object and specifies annotation types, e.g.: 
+The CAS is based on a type system file or `cassis.TypeSystem` object and specifies annotation types, e.g. 
 
 `de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity`
 
@@ -35,9 +37,13 @@ Finally, in a browser we can then render the HTML string:
 
 ![Screenshot_1](https://github.com/catalpa-cl/cas-visualizer/blob/4fb14d0961cc42536a97ab09f6012d5539175f1d/img/readme_img.png?raw=true)
 
-To switch to the highlighted style, before visualizing the CAS simply call:
+Before visualizing the CAS, you can switch to the highlighted style by calling:
 
 `span_vis.selected_span_type = "HIGHLIGHT"`
+
+![Screenshot_2](https://github.com/catalpa-cl/cas-visualizer/blob/2185cff13e35fc60086ee44640768d28f754146b/img/readme_img2.png?raw=true)
+
+---
 
 ### How to publish a new version:
 
