@@ -1,7 +1,7 @@
 import tempfile
 import webbrowser
 
-from cas_visualizer.visualizer2 import TableVisualizer
+from cas_visualizer.visualizer import TableVisualizer
 
 cas = '../data/hagen.txt.xmi'
 ts = '../data/TypeSystem.xml'

@@ -134,12 +134,12 @@ class SpanVisualizer(Visualizer):
         self._selected_span_type = value
 
     @property
-    def allow_highlighting_overlap(self):
+    def allow_highlight_overlap(self):
         return self._allow_highlight_overlap
 
-    @allow_highlighting_overlap.setter
-    def allow_highlighting_overlap(self, value:bool):
-        self._selected_span_type = value
+    @allow_highlight_overlap.setter
+    def allow_highlight_overlap(self, value:bool):
+        self._allow_highlight_overlap = value
 
     def render_visualization(self):
         match self.selected_span_type:
@@ -174,9 +174,9 @@ class SpanVisualizer(Visualizer):
                 )
                 labels_to_colors[label] = self.types_to_colors[annotation_type]
         tmp_ents.sort(key=lambda x: (x['start'], x['end']))
-        if not self.allow_highlighting_overlap and self.check_overlap(tmp_ents):
+        if not self._allow_highlight_overlap and self.check_overlap(tmp_ents):
             raise VisualizerException(
-                'The highlighted annotations are overlapping. Please choose a different set of annotations or switch display style to underline.')
+                'The highlighted annotations are overlapping. Choose a different set of annotations or set the allow_highlight_overlap parameter to True.')
 
         return EntityRenderer({"colors": labels_to_colors}).render_ents(self._cas.sofa_string, tmp_ents, "")
 
