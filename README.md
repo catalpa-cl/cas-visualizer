@@ -22,7 +22,7 @@ The CAS is based on a type system file or `cassis.TypeSystem` object and specifi
 To transform this annotation into an HTML string with underlined instances of type NamedEntity, we run:
 
 ```
-from cas_visualizer.visualizer import SpanVisualiser
+from cas_visualizer.visualizer import SpanVisualizer
 
 cas = '../data/hagen.txt.xmi'
 ts = '../data/TypeSystem.xml'
