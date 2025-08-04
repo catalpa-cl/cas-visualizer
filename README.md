@@ -19,7 +19,7 @@ The CAS is based on a type system file or `cassis.TypeSystem` object and specifi
 
 `de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity`
 
-To transform this annotation into an HTML string with underlined instances of type NamedEntity, we run:
+To transform the text into an HTML string with underlined annotations of type NamedEntity, we run:
 
 ```
 from cas_visualizer.visualizer import SpanVisualizer
