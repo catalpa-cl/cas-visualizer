@@ -124,11 +124,16 @@ class SpanVisualizer(Visualizer):
     HIGHLIGHT = 'HIGHLIGHT'
     UNDERLINE = 'UNDERLINE'
 
-    def __init__(self, ts: TypeSystem):
+    def __init__(self, ts: TypeSystem, span_type: str=None, types: list[str]=None):
         super().__init__(ts)
         self._span_types = [SpanVisualizer.HIGHLIGHT, SpanVisualizer.UNDERLINE]
         self._selected_span_type = SpanVisualizer.UNDERLINE
+        if span_type is not None:
+            self.selected_span_type = span_type
         self._allow_highlight_overlap = False
+        if types is not None:
+            for type_name in types:
+                self.add_type(type_name)
 
     @property
     def selected_span_type(self):
