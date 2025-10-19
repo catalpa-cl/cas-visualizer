@@ -15,6 +15,8 @@ class Visualizer(abc.ABC):
         self._colors = dict()
         self._labels = dict()
         self._features = dict()
+        self._feature_colors = dict()
+        self._feature_labels = dict()
         self._default_colors = iter(["lightgreen", "orangered", "orange", "plum", "palegreen", "mediumseagreen",
                        "steelblue", "skyblue", "navajowhite", "mediumpurple", "rosybrown", "silver", "gray",
                        "paleturquoise"])
@@ -25,6 +27,10 @@ class Visualizer(abc.ABC):
                 self._ts = ts
             case _:
                 raise VisualizerException('typesystem cannot be None')
+
+    @property
+    def features_to_colors(self) -> dict:
+        return self._feature_colors
 
     @property
     def types_to_colors(self) -> dict:
@@ -47,24 +53,59 @@ class Visualizer(abc.ABC):
         """Generates the visualization based on the provided configuration."""
         raise NotImplementedError
 
-    def add_type(self, type_name, feature_name=None, color=None, default_label=None):
+    def add_type(self,
+                 name: str,
+                 feature: str = None,
+                 color: str = None,
+                 default_label: str = None,
+                 ):
         """
         Adds a new annotation type to the visualizer.
-        :param type_name: name of the annotation type as declared in the type system.
-        :param feature_name: optionally, the value of a feature can be used as the tag label of the visualized annotation
+        :param name: name of the annotation type as declared in the type system.
+        :param feature: optionally, the value of a feature can be used as the tag label of the visualized annotation
         :param color: optionally, a specific string color name for the annotation
         :param default_label: optionally, a specific string label for the annotation (defaults to type_name)
         """
-        if type_name is None or len(type_name) == 0:
+        if not name:
             raise TypeError('type path cannot be empty')
-        self._types.add(type_name)
+        self._types.add(name)
+        self._colors[name] = color if color else next(self._default_colors)
+        self._labels[name] = default_label if default_label else name.split('.')[-1]
+        if feature:
+            self._add_feature_by_type(name, feature)
+
+    def add_feature(self,
+                 name: str,
+                 feature:str = None,
+                 value = None,
+                 color: str = None,
+                 ):
+        """
+        Adds a new annotation type to the visualizer.
+        :param name: name of the annotation type as declared in the type system.
+        :param feature: optionally, the value of a feature can be used as the tag label of the visualized annotation
+        :param value: optionally, the value of a feature can determine a different color for the annotation
+        :param color: optionally, the color for the annotation of a specific feature value
+        """
+        if not name:
+            raise TypeError('type path cannot be empty')
+        self._types.add(name)
+        if feature:
+            self._add_feature_by_type(name, feature)
+            if value is not None:
+                self._feature_colors[(name, value)] = color if color else next(self._default_colors)
+
+    def _add_feature_by_type(self, type_name, feature_name):
+        current_feature = self._features.get(type_name)
+        if current_feature is not None and current_feature != feature_name:
+            # new feature replaces current feature -> remove selected color
+            remove_list = []
+            for key in self._feature_colors.keys():
+                if key[0] == type_name:
+                    remove_list.append(key)
+            for key in remove_list:
+                del self._feature_colors[key]
         self._features[type_name] = feature_name
-        if color is None:
-            color = next(self._default_colors)
-        self._colors[type_name] = color
-        if default_label is None or len(default_label) == 0:
-            default_label = type_name.split('.')[-1]
-        self._labels[type_name] = default_label
 
     def add_types_from_list_of_dict(self, config_list: list):
         for item in config_list:
@@ -86,6 +127,10 @@ class Visualizer(abc.ABC):
             self._colors.pop(type_path)
             self._labels.pop(type_path)
             self._features.pop(type_path)
+            keys = [key for key in self._feature_colors.keys() if key[0] == type_path]
+            for key in keys:
+                self._feature_colors.pop(key)
+
         except:
             raise VisualizerException('type path cannot be found')
 
@@ -108,10 +153,10 @@ class TableVisualizer(Visualizer):
         records = []
         for type_item in self.type_list:
             for fs in self._cas.select(type_item):
-                feature_value = Visualizer.get_feature_value(fs, self.types_to_features[type_item])
+                feature_value = Visualizer.get_feature_value(fs, self.types_to_features.get(type_item))
                 records.append({
                     'text': fs.get_covered_text(),
-                    'feature': self.types_to_features[type_item],
+                    'feature': self.types_to_features.get(type_item),
                     'value': feature_value,
                     'begin': fs.begin,
                     'end': fs.end,
@@ -162,29 +207,32 @@ class SpanVisualizer(Visualizer):
             case _:
                 raise VisualizerException('Invalid span type')
 
-    @staticmethod
-    def get_label(fs: FeatureStructure, annotation_label, annotation_feature):
-        #if annotation_feature is not None and fs.get(annotation_feature) is not None and len(
-        #        fs[annotation_feature]) > 0:
-        #    return fs[annotation_feature]
+    def get_label(self, fs: FeatureStructure, annotation_type):
+        annotation_feature = self.types_to_features.get(annotation_type)
         feature_value = Visualizer.get_feature_value(fs, annotation_feature)
-        return feature_value if feature_value is not None else annotation_label
+        return feature_value if feature_value is not None else self.types_to_labels.get(annotation_type)
+
+    def get_color(self, annotation_type, label):
+        label_color = self.features_to_colors.get((annotation_type, label))
+        return label_color if label_color else self.types_to_colors.get(annotation_type)
 
     def parse_ents(self):  # see parse_ents spaCy/spacy/displacy/__init__.py
         tmp_ents = []
         labels_to_colors = dict()
-        for annotation_type, annotation_label in self.types_to_labels.items():
-            annotation_feature = self.types_to_features[annotation_type]
+        for annotation_type in self.type_list:
             for fs in self._cas.select(annotation_type):
-                label = self.get_label(fs, annotation_label, annotation_feature)
-                tmp_ents.append(
-                    {
-                        "start": fs.begin,
-                        "end": fs.end,
-                        "label": label,
-                    }
-                )
-                labels_to_colors[label] = self.types_to_colors[annotation_type]
+                label = self.get_label(fs, annotation_type)
+                color = self.get_color(annotation_type, label)
+                if color:
+                    # a color is required for each annotation
+                    tmp_ents.append(
+                        {
+                            "start": fs.begin,
+                            "end": fs.end,
+                            "label": label,
+                        }
+                    )
+                    labels_to_colors[label] = color
         tmp_ents.sort(key=lambda x: (x['start'], x['end']))
         if not self._allow_highlight_overlap and self.check_overlap(tmp_ents):
             raise VisualizerException(
@@ -222,8 +270,10 @@ class SpanVisualizer(Visualizer):
             cas_sofa_tokens.append(tmp_token)
         return cas_sofa_tokens
 
-    def create_spans(self, cas_sofa_tokens: list, annotation_type: str, annotation_feature: str,
-                     annotation_label: str) -> list[dict[str, str]]:
+    def create_spans(self,
+                     cas_sofa_tokens: list,
+                     annotation_type: str,
+                     ) -> list[dict[str, str]]:
         tmp_spans = []
         for fs in self._cas.select(annotation_type):
             start_token = 0
@@ -233,14 +283,13 @@ class SpanVisualizer(Visualizer):
                     start_token = idx
                 if token["end"] == fs.end:
                     end_token = idx + 1
-
             tmp_spans.append(
                 {
                     "start": fs.begin,
                     "end": fs.end,
                     "start_token": start_token,
                     "end_token": end_token,
-                    "label": self.get_label(fs, annotation_label, annotation_feature),
+                    "label": self.get_label(fs, annotation_type),
                 }
             )
         return tmp_spans
@@ -252,15 +301,13 @@ class SpanVisualizer(Visualizer):
 
         tmp_spans = []
         labels_to_colors = dict()
-        for annotation_type, annotation_label in self.types_to_labels.items():
-            annotation_feature = self.types_to_features[annotation_type]
-            new_spans = self.create_spans(tmp_tokens, annotation_type, annotation_feature, annotation_label)
-            for span in new_spans:
-                label = span["label"]
-                labels_to_colors[label] = self.types_to_colors[annotation_type]
-            tmp_spans.extend(new_spans)
+        for annotation_type in self.type_list:
+            for tmp_span in self.create_spans(tmp_tokens, annotation_type):
+                label = tmp_span["label"]
+                color = self.get_color(annotation_type, label)
+                if color is not None:
+                    # remove spans without a color from list
+                    labels_to_colors[label] = color
+                    tmp_spans.append(tmp_span)
         tmp_spans.sort(key=lambda x: x["start"])
         return SpanRenderer({"colors": labels_to_colors}).render_spans(tmp_token_texts, tmp_spans, "")
-
-
-

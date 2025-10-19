@@ -29,7 +29,7 @@ ts = '../data/TypeSystem.xml'
 
 span_vis = SpanVisualizer(ts)
 
-span_vis.add_type(type_name='NamedEntity')
+span_vis.add_type(name='NamedEntity')
 
 html = span_vis.visualize(cas)
 ```

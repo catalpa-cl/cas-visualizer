@@ -8,8 +8,8 @@ ts = '../data/TypeSystem.xml'
 
 span_vis = TableVisualizer(ts)
 
-span_vis.add_type(type_name='de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity')
-span_vis.add_type(type_name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature_name='description')
+span_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity')
+span_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature='description')
 
 html = span_vis.visualize(cas).reset_index(drop=True).to_html()
 

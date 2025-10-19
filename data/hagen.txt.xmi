@@ -472,7 +472,7 @@
     <type5:Organization xmi:id="580" sofa="2" begin="208" end="233" value="ORGANIZATION"/>
     <type5:Organization xmi:id="583" sofa="2" begin="894" end="925" value="ORGANIZATION"/>
     <type5:Organization xmi:id="585" sofa="2" begin="1008" end="1012" value="ORGANIZATION"/>
-    <type5:NamedEntity xmi:id="581" sofa="2" begin="382" end="390" value="MISC"/>
+    <type5:NamedEntity xmi:id="581" sofa="2" begin="382" end="390" value="MISC" identifier="XXX"/>
     <type5:NamedEntity xmi:id="584" sofa="2" begin="998" end="1003" value="MISC"/>
     <constituent:NP xmi:id="673" sofa="2" begin="0" end="47" constituentType="NP" parent="672" children="3 4 674"/>
     <constituent:NP xmi:id="675" sofa="2" begin="23" end="30" constituentType="MPN" parent="674" children="6 7"/>
