@@ -155,8 +155,6 @@ class Visualizer(abc.ABC):
                 self._cas = cas_from_string(cas, self._ts)
             case Cas():
                 self._cas = cas
-            case _:
-                raise VisualizerException('cas cannot be None')
         return self.render_visualization()
 
 class VisualizerException(Exception):
