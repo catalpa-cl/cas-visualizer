@@ -15,8 +15,9 @@ class Visualizer(abc.ABC):
         self._colors = dict()
         self._labels = dict()
         self._features = dict()
-        self._feature_colors = dict()
+        self._feature_colors = dict() # (name, feature) -> color
         self._feature_labels = dict()
+        self._value_labels = dict() #(name, feature, value) -> label
         self._default_colors = iter(["lightgreen", "orangered", "orange", "plum", "palegreen", "mediumseagreen",
                        "steelblue", "skyblue", "navajowhite", "mediumpurple", "rosybrown", "silver", "gray",
                        "paleturquoise"])
@@ -47,6 +48,10 @@ class Visualizer(abc.ABC):
     @property
     def type_list(self) -> list:
         return list(self._types)
+
+    @property
+    def values_to_labels(self) -> dict:
+        return self._value_labels
 
     @abc.abstractmethod
     def render_visualization(self):
@@ -79,13 +84,15 @@ class Visualizer(abc.ABC):
                  feature:str,
                  value,
                  color: str = None,
+                 label: str = None,
                  ):
         """
         Adds a new annotation type to the visualizer.
         :param name: name of the annotation type as declared in the type system.
-        :param feature: the value of a feature can be used as the tag label of the visualized annotation
-        :param value: the value of a feature can determine a different color for the annotation
+        :param feature: the feature of the annotation type
+        :param value: the value of the feature to annotate
         :param color: optionally, the color for the annotation of a specific feature value
+        :param label: optionally, replaces the specified value in the annotation labels
         """
         if not name:
             raise VisualizerException('type name cannot be empty')
@@ -93,7 +100,11 @@ class Visualizer(abc.ABC):
         if feature:
             self._add_feature_by_type(name, feature)
             if value:
-                self._feature_colors[(name, value)] = color if color else next(self._default_colors)
+                if label:
+                    self._value_labels[(name, feature, value)] = label
+                    self._feature_colors[(name, label)] = color if color else next(self._default_colors)
+                else:
+                    self._feature_colors[(name, value)] = color if color else next(self._default_colors)
             else:
                 raise VisualizerException(f'a value for feature {feature} must be specified')
         else:
@@ -214,6 +225,9 @@ class SpanVisualizer(Visualizer):
     def get_label(self, fs: FeatureStructure, annotation_type):
         annotation_feature = self.types_to_features.get(annotation_type)
         feature_value = Visualizer.get_feature_value(fs, annotation_feature)
+        default_label = self.values_to_labels.get((annotation_type,annotation_feature,feature_value))
+        if default_label:
+            return default_label
         return feature_value if feature_value is not None else self.types_to_labels.get(annotation_type)
 
     def get_color(self, annotation_type, label):
