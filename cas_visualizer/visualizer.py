@@ -145,6 +145,9 @@ class Visualizer(abc.ABC):
             keys = [key for key in self._feature_colors.keys() if key[0] == type_path]
             for key in keys:
                 self._feature_colors.pop(key)
+            keys = [key for key in self._value_labels.keys() if key[0] == type_path]
+            for key in keys:
+                self._value_labels.pop(key)
 
         except:
             raise VisualizerException('type path cannot be found')
