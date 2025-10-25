@@ -62,20 +62,20 @@ class Visualizer(abc.ABC):
                  name: str,
                  feature: str = None,
                  color: str = None,
-                 default_label: str = None,
+                 label: str = None,
                  ):
         """
         Adds a new annotation type to the visualizer.
         :param name: name of the annotation type as declared in the type system.
         :param feature: optionally, the value of a feature can be used as the tag label of the visualized annotation
         :param color: optionally, a specific string color name for the annotation
-        :param default_label: optionally, a specific string label for the annotation (defaults to type_name)
+        :param label: optionally, a specific string label for the annotation (defaults to type_name)
         """
         if not name:
             raise TypeError('type path cannot be empty')
         self._types.add(name)
         self._colors[name] = color if color else next(self._default_colors)
-        self._labels[name] = default_label if default_label else name.split('.')[-1]
+        self._labels[name] = label if label else name.split('.')[-1]
         if feature:
             self._add_feature_by_type(name, feature)
 
@@ -127,8 +127,8 @@ class Visualizer(abc.ABC):
             type_path = item.get('type_path')
             feature_name = item.get('feature_name')
             color = item.get('color')
-            default_label = item.get('default_label')
-            self.add_type(type_path, feature_name, color, default_label)
+            label = item.get('label')
+            self.add_type(type_path, feature_name, color, label)
 
     @staticmethod
     def get_feature_value(fs:FeatureStructure, feature_name:str):
