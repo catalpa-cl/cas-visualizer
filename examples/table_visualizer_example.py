@@ -6,12 +6,12 @@ from cas_visualizer.visualizer import TableVisualizer
 cas = '../data/hagen.txt.xmi'
 ts = '../data/TypeSystem.xml'
 
-span_vis = TableVisualizer(ts)
+table_vis = TableVisualizer(ts)
 
-span_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity')
-span_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature='description')
+table_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity')
+table_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature='description')
 
-html = span_vis.visualize(cas).reset_index(drop=True).to_html()
+html = table_vis.visualize(cas).reset_index(drop=True).to_html()
 
 ### render HTML in Browser
 
