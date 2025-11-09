@@ -4,7 +4,8 @@ import pandas as pd
 from cas_visualizer.util import cas_from_string, load_typesystem
 from cassis import Cas, TypeSystem
 from cassis.typesystem import FeatureStructure
-from spacy.displacy import EntityRenderer, SpanRenderer
+from spacy.displacy import EntityRenderer, DependencyRenderer, SpanRenderer
+from typing import Any, Dict
 
 
 class Visualizer(abc.ABC):
@@ -152,12 +153,14 @@ class Visualizer(abc.ABC):
         except:
             raise VisualizerException('type path cannot be found')
 
-    def visualize(self, cas: Cas|str):
+    def visualize(self, cas: Cas|str, view_name=None):
         match cas:
             case str():
                 self._cas = cas_from_string(cas, self._ts)
             case Cas():
                 self._cas = cas
+        if view_name:
+            self._cas._current_view = self._cas._views[view_name]
         return self.render_visualization()
 
 class VisualizerException(Exception):
@@ -330,3 +333,113 @@ class SpanVisualizer(Visualizer):
                     tmp_spans.append(tmp_span)
         tmp_spans.sort(key=lambda x: x["start"])
         return SpanRenderer({"colors": labels_to_colors}).render_spans(tmp_token_texts, tmp_spans, "")
+
+class DependencyVisualizer(Visualizer):
+
+    T_DEPENDENCY = 'org.dakoda.syntax.UDependency'
+    T_POS = 'de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS'
+    T_SENTENCE = 'de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence'
+
+    def __init__(self, ts: TypeSystem,
+                 dep_type: str = T_DEPENDENCY,
+                 pos_type: str = T_POS,
+                 span_type: str = T_SENTENCE,
+                 ):
+        """
+
+        :param ts: TypeSystem to use.
+        :param dep_type: Type used to determine the dependencies.
+        :param pos_type: Type used to determine the part-of-speech.
+        :param span_type: Type used to determine the spans.
+        """
+        super().__init__(ts)
+        self._dep_type = dep_type
+        self._pos_type = pos_type
+        self._span_type = span_type
+
+    def visualize(self, cas: Cas|str,
+                  minify: bool = False,
+                  options: Dict[str, Any] = {},
+                  page: bool = False,
+                  span_range: tuple[int, int] = None,
+                  view_name: str = None,
+                  ):
+        """
+
+        :param cas: CAS object to visualize.
+        :param minify: optionally, minifies HTML markup.
+        :param options: optionally, specifies parameters for spacy rendering
+        :param page: optionally, render parses wrapped as full HTML page.
+        :param span_range: optionally, limits range of spans to render.
+        :param view_name: optionally, specifies name of the view being rendered.
+        :return: rendered SVG or HTML markup
+        """
+        self._minify = minify
+        self._options = options
+        self._page = page
+        self._span_range = span_range
+        if span_range and span_range[0] > span_range[1]:
+            raise VisualizerException(f'Given span range {span_range} is not valid.')
+        return super().visualize(cas, view_name=view_name)
+
+
+    def render_visualization(self):
+        parsed = []
+        renderer = DependencyRenderer(options=self._options)
+        for item in self._cas.select(self._span_type):
+            if self._span_range is None or (item.begin >= self._span_range[0] and item.end <= self._span_range[1]):
+                struct = self.dep_to_dict(covered=item)
+                parsed.append({"words": struct['words'], "arcs": struct['arcs']})
+
+        if len(parsed) == 0:
+            raise VisualizerException(f'No spans found for type {self._span_type} in range {self._span_range}.')
+
+        return renderer.render(parsed, page=self._page, minify=self._minify)
+
+
+    def dep_to_dict(self, covered: FeatureStructure):
+
+        # construct dummy annotation to use for covered select (i.e. restrict results to given span (usually a single sentence))
+        #T = cas.typesystem.get_type('de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Token')
+        #covered = T(begin=span[0], end=span[1])
+
+        offset_to_index = {}
+        for idx, p in enumerate(self._cas.select(self._pos_type)):
+            offset_to_index[p.begin] = idx
+
+        words = [
+            {
+                'text': p.get_covered_text(),
+                'tag': p.PosValue
+            }
+            for p in self._cas.select_covered(
+                self._pos_type,
+                covering_annotation=covered
+            )
+        ]
+
+        # how to restrict arcs to covered span?
+        arcs = [
+            {
+                'start': offset_to_index[d.Governor.begin],
+                'end': offset_to_index[d.Dependent.begin],
+                'label': d.DependencyType,
+                'dir': 'right' if d.Governor.begin < d.Dependent.begin else 'left',
+            }
+            for d in self._cas.select(
+                self._dep_type,
+            )
+            #if span[0] <= d.Governor.begin <= span[1] and span[0] <= d.Dependent.begin <= span[1]
+        ]
+
+        # ensure that start is always smaller than end
+        # i.e. direction is only encoded in 'dir' field
+        for arc in arcs:
+            if arc['start'] > arc['end']:
+                arc['start'], arc['end'] = arc['end'], arc['start']
+
+        # remove root (i.e. keep everything except root where start == end)
+        arcs = [arc for arc in arcs if arc['start'] != arc['end']]
+
+        return {"words": words, "arcs": arcs}
+
