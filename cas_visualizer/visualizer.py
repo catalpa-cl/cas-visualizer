@@ -342,13 +342,6 @@ class DependencyVisualizer(Visualizer):
     T_POS = 'de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS'
     T_SENTENCE = 'de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence'
 
-    DEFAULT_LANG = "en"
-    DEFAULT_DIR = "ltr"
-    TPL_TITLE = """
-    <h2 style="margin: 0"/>
-    """
-    #<h2 style="margin: 0">{title}</h2>
-
     output_formats = Literal['html', 'svg', 'pdf', 'png']
 
     def __init__(self, ts: TypeSystem,
@@ -420,10 +413,6 @@ class DependencyVisualizer(Visualizer):
             case 'svg':
                 rendered = []
                 for i, p in enumerate(parsed):
-                    if i == 0:
-                        settings = p.get("settings", {})
-                        renderer.direction = settings.get("direction", DependencyVisualizer.DEFAULT_DIR)
-                        renderer.lang = settings.get("lang", DependencyVisualizer.DEFAULT_LANG)
                     svg = renderer.render_svg(f"render_id-{i}", p["words"], p["arcs"])
                     rendered.append(svg)
                 return rendered
