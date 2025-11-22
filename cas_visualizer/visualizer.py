@@ -1,11 +1,13 @@
 import abc
+from unittest import case
+
 import pandas as pd
 
 from cas_visualizer.util import cas_from_string, load_typesystem
 from cassis import Cas, TypeSystem
 from cassis.typesystem import FeatureStructure
 from spacy.displacy import EntityRenderer, DependencyRenderer, SpanRenderer
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 
 
 class Visualizer(abc.ABC):
@@ -340,6 +342,15 @@ class DependencyVisualizer(Visualizer):
     T_POS = 'de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS'
     T_SENTENCE = 'de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence'
 
+    DEFAULT_LANG = "en"
+    DEFAULT_DIR = "ltr"
+    TPL_TITLE = """
+    <h2 style="margin: 0"/>
+    """
+    #<h2 style="margin: 0">{title}</h2>
+
+    output_formats = Literal['html', 'svg', 'pdf', 'png']
+
     def __init__(self, ts: TypeSystem,
                  dep_type: str = T_DEPENDENCY,
                  pos_type: str = T_POS,
@@ -364,6 +375,7 @@ class DependencyVisualizer(Visualizer):
                   start: int = 0,
                   end: int = -1,
                   view_name: str = None,
+                  output_format:output_formats = 'html',
                   ):
         """
 
@@ -374,10 +386,12 @@ class DependencyVisualizer(Visualizer):
         :param start: optionally, specifies starting position of spans.
         :param end: optionally, specifies ending position of spans.
         :param view_name: optionally, specifies name of the view being rendered.
-        :return: rendered SVG or HTML markup
+        :param output_format: optionally, specifies output format. Supported options: html, pdf, svg, html.
+        :return: dependency graph as specified by output_format.
         """
         self._minify = minify
         self._options = options
+        self._output_format = output_format
         self._page = page
         self._span_range = [start, end]
         if end > -1 and start > end:
@@ -400,7 +414,21 @@ class DependencyVisualizer(Visualizer):
         if len(parsed) == 0:
             raise VisualizerException(f'No spans found for type {self._span_type} in range {self._span_range}.')
 
-        return renderer.render(parsed, page=self._page, minify=self._minify)
+        match self._output_format:
+            case 'html':
+                return renderer.render(parsed, page=self._page, minify=self._minify)
+            case 'svg':
+                rendered = []
+                for i, p in enumerate(parsed):
+                    if i == 0:
+                        settings = p.get("settings", {})
+                        renderer.direction = settings.get("direction", DependencyVisualizer.DEFAULT_DIR)
+                        renderer.lang = settings.get("lang", DependencyVisualizer.DEFAULT_LANG)
+                    svg = renderer.render_svg(f"render_id-{i}", p["words"], p["arcs"])
+                    rendered.append(svg)
+                return rendered
+            case _:
+                raise VisualizerException(f'Output format {self._output_format} is not yet supported.')
 
 
     def dep_to_dict(self, covered: FeatureStructure):
