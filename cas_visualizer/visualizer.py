@@ -361,7 +361,8 @@ class DependencyVisualizer(Visualizer):
                   minify: bool = False,
                   options: Dict[str, Any] = {},
                   page: bool = False,
-                  span_range: tuple[int, int] = None,
+                  start: int = 0,
+                  end: int = -1,
                   view_name: str = None,
                   ):
         """
@@ -370,24 +371,29 @@ class DependencyVisualizer(Visualizer):
         :param minify: optionally, minifies HTML markup.
         :param options: optionally, specifies parameters for spacy rendering
         :param page: optionally, render parses wrapped as full HTML page.
-        :param span_range: optionally, limits range of spans to render.
+        :param start: optionally, specifies starting position of spans.
+        :param end: optionally, specifies ending position of spans.
         :param view_name: optionally, specifies name of the view being rendered.
         :return: rendered SVG or HTML markup
         """
         self._minify = minify
         self._options = options
         self._page = page
-        self._span_range = span_range
-        if span_range and span_range[0] > span_range[1]:
-            raise VisualizerException(f'Given span range {span_range} is not valid.')
+        self._span_range = [start, end]
+        if end > -1 and start > end:
+            raise VisualizerException(f'Given span range [start={start}, end={end}] is not valid.')
         return super().visualize(cas, view_name=view_name)
 
 
     def render_visualization(self):
         parsed = []
         renderer = DependencyRenderer(options=self._options)
+        span_start = self._span_range[0]
+        span_end = self._span_range[1]
+        if span_end == -1:
+            span_end = len(self._cas.sofa_string)
         for item in self._cas.select(self._span_type):
-            if self._span_range is None or (item.begin >= self._span_range[0] and item.end <= self._span_range[1]):
+            if self._span_range is None or (item.begin >= span_start and item.end <= span_end):
                 struct = self.dep_to_dict(covered=item)
                 parsed.append({"words": struct['words'], "arcs": struct['arcs']})
 

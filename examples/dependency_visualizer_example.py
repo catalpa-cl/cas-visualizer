@@ -10,8 +10,8 @@ ts = '../data/dakoda_typesystem.xml'
 dep_vis = DependencyVisualizer(ts)
 
 html = dep_vis.visualize(cas, view_name='ctok')
-html = dep_vis.visualize(cas, view_name='ctok', span_range=(0,100))
-html = dep_vis.visualize(cas, view_name='ctok', span_range=(0,100), options = {'color':'blue', 'compact':True})
+html = dep_vis.visualize(cas, view_name='ctok', start=0)
+html = dep_vis.visualize(cas, view_name='ctok', start= 0, end=100, options = {'color':'blue', 'compact':True})
 
 ### render HTML in Browser
 
