@@ -366,7 +366,9 @@ class SpacyDependencyVisualizer(Visualizer):
 
         :param cas: CAS object to visualize.
         :param minify: optionally, minifies HTML markup.
-        :param options: optionally, specifies parameters for spacy rendering
+        :param options: optionally, specifies parameters for spacy rendering. Supported options are: fine_grained,
+            add_lemma, collapse_punct, collapse_phrases, compact, color, bg, font, offset_x, arrow_stroke, arrow_width,
+            arrow_spacing, word_spacing, distance
         :param page: optionally, render parses wrapped as full HTML page.
         :param start: optionally, specifies starting position of spans.
         :param end: optionally, specifies ending position of spans.
