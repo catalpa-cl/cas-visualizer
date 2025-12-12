@@ -1,10 +1,10 @@
 import tempfile
 import webbrowser
 
+from cas_visualizer.util import cas_from_string, load_typesystem
 from cas_visualizer.visualizer import SpanVisualizer
 
-cas = '../data/hagen.txt.xmi'
-ts = '../data/TypeSystem.xml'
+ts = load_typesystem('../data/TypeSystem.xml')
 
 span_vis = SpanVisualizer(ts)
 
@@ -20,6 +20,7 @@ span_vis.add_feature(name='NamedEntity', feature="value", value="LOCATION")
 ### uncomment to change span style to highlight
 #span_vis.selected_span_type = "HIGHLIGHT"
 
+cas = cas_from_string('../data/hagen.txt.xmi', ts)
 html = span_vis.visualize(cas)
 
 ### render HTML in Browser

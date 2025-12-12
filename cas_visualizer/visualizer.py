@@ -1,9 +1,8 @@
 import abc
-from unittest import case
 
 import pandas as pd
 
-from cas_visualizer.util import cas_from_string, load_typesystem
+from cas_visualizer.util import load_typesystem
 from cassis import Cas, TypeSystem
 from cassis.typesystem import FeatureStructure
 from spacy.displacy import EntityRenderer, DependencyRenderer, SpanRenderer
@@ -155,14 +154,8 @@ class Visualizer(abc.ABC):
         except:
             raise VisualizerException('type path cannot be found')
 
-    def visualize(self, cas: Cas|str, view_name=None):
-        match cas:
-            case str():
-                self._cas = cas_from_string(cas, self._ts)
-            case Cas():
-                self._cas = cas
-        if view_name:
-            self._cas._current_view = self._cas._views[view_name]
+    def visualize(self, cas: Cas, view_name=None):
+        self._cas = cas
         return self.render_visualization()
 
 class VisualizerException(Exception):
@@ -361,13 +354,12 @@ class DependencyVisualizer(Visualizer):
         self._pos_type = pos_type
         self._span_type = span_type
 
-    def visualize(self, cas: Cas|str,
+    def visualize(self, cas: Cas,
                   minify: bool = False,
                   options: Dict[str, Any] = {},
                   page: bool = False,
                   start: int = 0,
                   end: int = -1,
-                  view_name: str = None,
                   output_format:output_formats = 'html',
                   ):
         """
@@ -389,7 +381,7 @@ class DependencyVisualizer(Visualizer):
         self._span_range = [start, end]
         if end > -1 and start > end:
             raise VisualizerException(f'Given span range [start={start}, end={end}] is not valid.')
-        return super().visualize(cas, view_name=view_name)
+        return super().visualize(cas)
 
 
     def render_visualization(self):

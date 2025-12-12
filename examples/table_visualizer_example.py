@@ -1,16 +1,18 @@
 import tempfile
 import webbrowser
 
+from cas_visualizer.util import cas_from_string, load_typesystem
 from cas_visualizer.visualizer import TableVisualizer
 
-cas = '../data/hagen.txt.xmi'
-ts = '../data/TypeSystem.xml'
+ts = load_typesystem('../data/TypeSystem.xml')
 
 table_vis = TableVisualizer(ts)
 
 table_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity')
 table_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature='description')
 
+
+cas = cas_from_string('../data/hagen.txt.xmi', ts)
 html = table_vis.visualize(cas).reset_index(drop=True).to_html()
 
 ### render HTML in Browser
