@@ -2,11 +2,11 @@ import tempfile
 import webbrowser
 
 from cas_visualizer.util import cas_from_string, load_typesystem
-from cas_visualizer.visualizer import DependencyVisualizer
+from cas_visualizer.visualizer import SpacyDependencyVisualizer
 
 ts = load_typesystem('../data/dakoda_typesystem.xml')
 
-dep_vis = DependencyVisualizer(ts)
+dep_vis = SpacyDependencyVisualizer(ts)
 
 cas = cas_from_string('../data/SWI03_fD_Mo107_c.xmi', ts).get_view('ctok')
 html = dep_vis.visualize(cas)

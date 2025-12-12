@@ -329,7 +329,7 @@ class SpanVisualizer(Visualizer):
         tmp_spans.sort(key=lambda x: x["start"])
         return SpanRenderer({"colors": labels_to_colors}).render_spans(tmp_token_texts, tmp_spans, "")
 
-class DependencyVisualizer(Visualizer):
+class SpacyDependencyVisualizer(Visualizer):
 
     T_DEPENDENCY = 'org.dakoda.syntax.UDependency'
     T_POS = 'de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS'
