@@ -1,85 +1,154 @@
+from __future__ import annotations
+
 import abc
+from dataclasses import dataclass, field
+from itertools import cycle
+from pathlib import Path
+from typing import Any, Dict, Iterator, Optional
+
 import pandas as pd
-from cas_visualizer.util import load_typesystem
 from cassis import Cas, TypeSystem
 from cassis.typesystem import FeatureStructure
-from collections.abc import Iterator
-from itertools import cycle
 from spacy.displacy import EntityRenderer, DependencyRenderer, SpanRenderer
-from typing import Any, Dict, Optional, Literal
 
-OutputFormat = Literal['html', 'svg', 'pdf', 'png']
+from cas_visualizer.util import ensure_typesystem
+
+
+class VisualizerException(Exception):
+    """
+    Domain-specific error for visualizer configuration and rendering.
+
+    Raised when:
+    - configuration is invalid (unknown type/feature, illegal span type),
+    - no content can be rendered in strict mode,
+    - requested output format is unsupported,
+    - spec cannot be produced (e.g., misaligned annotation boundaries).
+    """
+    pass
+
+
+# ---------- Type configuration ----------
+
+@dataclass
+class TypeConfig:
+    """
+    Per-type configuration used by visualizers.
+
+    Fields:
+    - name: fully qualified CAS type name (e.g., "de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity")
+    - feature: feature name to use for labels (e.g., "value"); if None, no label
+    - default_color: fallback color for this type
+    - default_label: fallback label if feature value is missing
+    - value_labels: raw feature value -> display label mapping
+    - label_colors: display label -> color mapping
+    """
+    name: str
+    feature: str | None = None
+    default_color: str | None = None
+    default_label: str | None = None
+    value_labels: Dict[Any, str] = field(default_factory=dict)
+    label_colors: Dict[str, str] = field(default_factory=dict)
+
+    def label_for_value(self, value: Any) -> str | None:
+        """
+        Resolve a display label:
+        - use value_labels mapping if present,
+        - else str(value) if value is not None,
+        - else fallback to default_label.
+        """
+        mapped = self.value_labels.get(value)
+        if mapped is not None:
+            return mapped
+        if value is not None:
+            return str(value)
+        return self.default_label
+
+    def color_for_label(self, label: str | None) -> str | None:
+        """
+        Resolve a color:
+        - use label_colors[label] if present,
+        - else fallback to default_color.
+        """
+        if label is None:
+            return self.default_color
+        return self.label_colors.get(label, self.default_color)
+
+
+# ---------- Base visualizer ----------
 
 class Visualizer(abc.ABC):
-    def __init__(self, ts: str|TypeSystem):
-        self._types: set[str] = set()
-        self._colors: dict[str, str] = dict()
-        self._labels: dict[str, str] = dict()
-        self._features: dict[str, str] = dict()
-        self._feature_colors: dict[tuple[str, str], str] = dict() # (name, feature) -> color
-        self._feature_labels: dict[tuple[str, str], str] = dict()
-        self._value_labels: dict[tuple[str, Optional[str], Any], str] = dict() #(name, feature, value) -> label
-        
-        # Default color iterator
+    """
+    Base class for CAS visualizers.
+
+    Responsibilities:
+    - hold per-type configuration (features, labels, colors),
+    - provide helpers to resolve labels and colors,
+    - normalize the type system argument via ensure_typesystem,
+    - offer an HTML page wrapper (UTF‑8 meta) for fragments.
+
+    Contract:
+    - visualize and render return a single string, always.
+    - Subclasses validate supported output_format values at runtime and raise VisualizerException otherwise.
+    """
+    def __init__(self, ts: str | Path | TypeSystem):
+        # Registered type configs keyed by full type path
+        self._type_configs: Dict[str, TypeConfig] = {}
+
+        # Default color iterator (cycled, never exhausted)
         color_list = [
             "lightgreen", "orangered", "orange", "plum", "palegreen",
             "mediumseagreen", "steelblue", "skyblue", "navajowhite",
-            "mediumpurple", "rosybrown", "silver", "gray", "paleturquoise"
+            "mediumpurple", "rosybrown", "silver", "gray", "paleturquoise",
         ]
         self._default_colors: Iterator[str] = cycle(color_list)
 
-        if isinstance(ts, str):
-            self._ts = load_typesystem(ts)
-        elif isinstance(ts, (TypeSystem)):
-            self._ts = ts
-        else:
-            raise VisualizerException('typesystem must be a string path or TypeSystem object')
+        # Normalize and store the type system
+        self._ts = ensure_typesystem(ts)
 
     @property
-    def features_to_colors(self) -> dict[tuple[str,str],str]:
-        return self._feature_colors
+    def ts(self) -> TypeSystem:
+        """The normalized TypeSystem used by this visualizer."""
+        return self._ts
 
-    @property
-    def types_to_colors(self) -> dict[str, str]:
-        return self._colors
+    # ----- Configuration API -----
 
-    @property
-    def types_to_features(self) -> dict[str, str]:
-        return self._features
-
-    @property
-    def types_to_labels(self) -> dict[str, str]:
-        return self._labels
-
-    # TODO why list and not set?
-    @property
-    def type_list(self) -> list[str]:
-        return list(self._types)
-
-    @property
-    def values_to_labels(self) -> dict[tuple[str, Optional[str], Any], str]:
-        return self._value_labels
-
-    def add_type(self,
-                 name: str,
-                 feature: str | None = None,
-                 color: str | None  = None,
-                 label: str | None  = None,
-                 ):
+    def add_type(
+        self,
+        name: str,
+        feature: str | None = None,
+        color: str | None = None,
+        label: str | None = None,
+    ) -> None:
         """
-        Adds a new annotation type to the visualizer.
-        :param name: name of the annotation type as declared in the type system.
-        :param feature: optionally, the value of a feature can be used as the tag label of the visualized annotation
-        :param color: optionally, a specific string color name for the annotation
-        :param label: optionally, a specific string label for the annotation (defaults to type_name)
+        Register or update a type configuration.
+
+        Parameters:
+        - name: fully qualified CAS type name
+        - feature: feature to use for labels (optional)
+        - color: default color (optional; if omitted, a new default is assigned)
+        - label: default label (optional; if omitted, last path segment is used)
         """
         if not name:
-            raise TypeError('type path cannot be empty')
-        self._types.add(name)
-        self._colors[name] = color if color else next(self._default_colors)
-        self._labels[name] = label if label else name.split('.')[-1]
-        if feature:
-            self._add_feature_by_type(name, feature)
+            raise VisualizerException("type path cannot be empty")
+
+        cfg = self._type_configs.get(name)
+        if cfg is None:
+            cfg = TypeConfig(name=name)
+            self._type_configs[name] = cfg
+
+        if feature is not None:
+            # Optional: validate against TypeSystem (expensive if repeated)
+            # ts_type = self._ts.get_type(name)
+            # if feature not in {f.name for f in ts_type.features}:
+            #     raise VisualizerException(f'Unknown feature "{feature}" for type "{name}"')
+            cfg.feature = feature
+
+        if color is not None:
+            cfg.default_color = color
+        elif cfg.default_color is None:
+            cfg.default_color = next(self._default_colors)
+
+        cfg.default_label = label if label is not None else (cfg.default_label or name.split(".")[-1])
 
     def add_feature(
         self,
@@ -88,193 +157,467 @@ class Visualizer(abc.ABC):
         value: Any,
         color: str | None = None,
         label: str | None = None,
-    ):
-        if not name:
-            raise VisualizerException('type name cannot be empty')
-        self._types.add(name)
-        if not feature:
-            raise VisualizerException(f'a feature for type {name} must be specified')
+    ) -> None:
+        """
+        Map a specific feature value to a display label and color.
 
-        self._add_feature_by_type(name, feature)
+        Parameters:
+        - name: CAS type name to configure
+        - feature: feature on the type (stored on the type config)
+        - value: raw feature value to map
+        - color: optional color for the display label (assigned if given; otherwise, a default is picked)
+        - label: optional display label (defaults to str(value))
+        """
+        if not name:
+            raise VisualizerException("type name cannot be empty")
+
+        cfg = self._type_configs.get(name)
+        if cfg is None:
+            cfg = TypeConfig(name=name)
+            self._type_configs[name] = cfg
+
+        if not feature:
+            raise VisualizerException(f"a feature for type {name} must be specified")
+        cfg.feature = feature
 
         if value is None:
-            raise VisualizerException(f'a value for feature {feature} must be specified')
+            raise VisualizerException(f"a value for feature {feature} must be specified")
 
         eff_label = label if label is not None else str(value)
-        self._value_labels[(name, feature, value)] = eff_label
-        self._feature_colors[(name, eff_label)] = color if color else next(self._default_colors)
+        cfg.value_labels[value] = eff_label
 
-    @abc.abstractmethod
-    def visualize(self, cas: Cas) -> Any:
-        """Generates the visualization based on the provided configuration."""
-        raise NotImplementedError
+        if color is not None:
+            cfg.label_colors[eff_label] = color
+        elif eff_label not in cfg.label_colors:
+            cfg.label_colors[eff_label] = next(self._default_colors)
 
-    def _add_feature_by_type(self, type_name: str, feature_name: str):
-        current_feature = self._features.get(type_name)
-        if current_feature is not None and current_feature != feature_name:
-            # new feature replaces current feature -> remove selected color
-            remove_list: list[tuple[str, str]] = []
-            for key in self._feature_colors.keys():
-                if key[0] == type_name:
-                    remove_list.append(key)
-            for key in remove_list:
-                del self._feature_colors[key]
-        self._features[type_name] = feature_name
+        if cfg.default_color is None:
+            cfg.default_color = next(self._default_colors)
 
-    # # TODO is this ever used?
-    # def add_types_from_list_of_dict(self, config_list: list):
-    #     for item in config_list:
-    #         type_path = item.get('type_path')
-    #         feature_name = item.get('feature_name')
-    #         color = item.get('color')
-    #         label = item.get('label')
-    #         self.add_type(type_path, feature_name, color, label)
+    def remove_type(self, type_path: str) -> None:
+        """Remove a type configuration and all associated mappings."""
+        if not type_path:
+            raise VisualizerException("type path cannot be empty")
+        self._type_configs.pop(type_path, None)
 
-    def _get_feature_value(self, fs: FeatureStructure, feature_name: Optional[str]) -> Any:
+    def clear_types(self) -> None:
+        """Remove all type configurations."""
+        self._type_configs.clear()
+
+    # ----- Resolvers / Helpers -----
+
+    def list_types(self) -> list[str]:
+        """List configured type names (in insertion order)."""
+        return list(self._type_configs.keys())
+
+    def iter_type_configs(self):
+        """Iterate over (type_name, TypeConfig) pairs."""
+        return self._type_configs.items()
+
+    def get_type_feature(self, type_name: str) -> str | None:
+        """Return the configured feature name for a type (or None)."""
+        cfg = self._type_configs.get(type_name)
+        return cfg.feature if cfg else None
+
+    def resolve_label(self, fs: FeatureStructure, type_name: str) -> str | None:
+        """Compute a display label for a feature structure of the given type."""
+        cfg = self._type_configs.get(type_name)
+        if cfg is None:
+            return None
+        value = self._get_feature_value(fs, cfg.feature)
+        return cfg.label_for_value(value)
+
+    def resolve_color(self, type_name: str, label: str | None) -> str | None:
+        """Compute a display color for the given type and label."""
+        cfg = self._type_configs.get(type_name)
+        if cfg is None:
+            return None
+        return cfg.color_for_label(label)
+
+    def _get_feature_value(self, fs: FeatureStructure, feature_name: str | None) -> Any:
+        """Safely get a feature value (raises VisualizerException on missing feature)."""
         if feature_name is None:
             return None
         try:
             return fs.get(feature_name)
-        except KeyError:
-            # Optional, aber hilfreicher als still None zurückzugeben
+        except KeyError as e:
             raise VisualizerException(
                 f"Feature '{feature_name}' not found on type '{fs.type.name}'"
-            )
+            ) from e
 
-    # TODO do we need that, why would we want to remove types?
-    # implement clear() or similar instead?
-    def remove_type(self, type_path: str):
-        if not type_path:
-            raise VisualizerException('type path cannot be empty')
-        self._types.discard(type_path)
-        self._colors.pop(type_path, None)
-        self._labels.pop(type_path, None)
-        self._features.pop(type_path, None)
-        keys = [key for key in self._feature_colors.keys() if key[0] == type_path]
-        for key in keys:
-            self._feature_colors.pop(key)
-        keys = [key for key in self._value_labels.keys() if key[0] == type_path]
-        for key in keys:
-            self._value_labels.pop(key)
+    @staticmethod
+    def _wrap_html_page(fragment: str, title: str = "Visualizer") -> str:
+        """
+        Wrap an HTML fragment into a full document with UTF‑8 meta.
+
+        Useful to avoid browser encoding issues for fragments rendered by spaCy's displaCy.
+        """
+        return (
+            "<!doctype html>\n"
+            "<html lang=\"en\">\n"
+            "<head>\n<meta charset=\"utf-8\">\n"
+            f"<title>{title}</title>\n</head>\n<body>\n"
+            f"{fragment}\n"
+            "</body>\n</html>"
+        )
+
+    @abc.abstractmethod
+    def visualize(
+        self,
+        cas: Cas,
+        *,
+        start: int = 0,
+        end: int = -1,
+        output_format: str = "html",
+    ) -> str:
+        """
+        Build and render a visualization.
+
+        Parameters:
+        - cas: CAS instance to visualize
+        - start, end: character range to consider (end = -1 means end of document)
+        - output_format: format identifier (subclasses validate supported values)
+
+        Returns:
+        - a single string (HTML, SVG, CSV, JSON, LaTeX depending on the visualizer and selected format)
+
+        Errors:
+        - VisualizerException on unsupported format or when strict mode requires content but none is found.
+        """
+        raise NotImplementedError
 
 
-class VisualizerException(Exception):
-    pass
+# ---------- Table visualizer ----------
 
 class TableVisualizer(Visualizer):
-    
-    def visualize(self, cas: Cas) -> pd.DataFrame:
-        records = []
-        for type_item in self.type_list:
-            for fs in cas.select(type_item):
-                feature_value = self._get_feature_value(fs=fs, feature_name=self.types_to_features.get(type_item))
+    """
+    Tabular visualization of selected annotations.
+
+    Pipeline:
+    - build: produce a pandas DataFrame of rows within [start, end)
+    - render: export the DataFrame as HTML, CSV, JSON, or LaTeX (returns str)
+    - visualize: build + render
+
+    Strict mode:
+    - If strict=True and the DataFrame is empty, render() raises VisualizerException.
+      Otherwise, you may get a valid but empty HTML table/CSV/JSON/LaTeX.
+    """
+    def __init__(
+        self,
+        ts: str | Path | TypeSystem,
+        *,
+        default_render_options: Dict[str, Any] | None = None,
+        default_sort: bool = True,
+        page: bool = False,
+        strict: bool = True,
+    ):
+        super().__init__(ts)
+        self._default_render_options = default_render_options or {}
+        self._default_sort = default_sort
+        self._page = page
+        self._strict = strict
+
+    def build(self, cas: Cas, *, start: int = 0, end: int = -1) -> pd.DataFrame:
+        """
+        Build the table spec (DataFrame). Include only annotations fully inside [start, end).
+        If end == -1, treat it as len(document_text).
+        """
+        if end == -1:
+            end = len(cas.sofa_string)
+        cols = ["text", "feature", "value", "begin", "end"]
+        records: list[dict[str, Any]] = []
+
+        for type_name, cfg in self.iter_type_configs():
+            for fs in cas.select(type_name):
+                if fs.begin < start or fs.end > end:
+                    continue
+
+                feature_name = cfg.feature
+                feature_value = self._get_feature_value(fs, feature_name)
+
                 records.append({
-                    'text': fs.get_covered_text(),
-                    'feature': self.types_to_features.get(type_item),
-                    'value': feature_value,
-                    'begin': fs.begin,
-                    'end': fs.end,
+                    "text": fs.get_covered_text(),
+                    "feature": feature_name,
+                    "value": feature_value,
+                    "begin": fs.begin,
+                    "end": fs.end,
                 })
 
-        return pd.DataFrame.from_records(records).sort_values(by=['begin', 'end'])
+        df = pd.DataFrame.from_records(records, columns=cols)
+        if self._default_sort and not df.empty:
+            df = df.sort_values(by=["begin", "end"], kind="mergesort")
+        return df
 
-class SpanVisualizer(Visualizer):
-    HIGHLIGHT: str = 'HIGHLIGHT'
-    UNDERLINE: str = 'UNDERLINE'
+    def render(
+        self,
+        spec: pd.DataFrame,
+        *,
+        output_format: str = "html",
+        render_options: Dict[str, Any] | None = None,
+    ) -> str:
+        """
+        Export the table to the requested format.
 
-    def __init__(self, ts: str|TypeSystem, span_type: Optional[str]=None, types: Optional[list[str]]=None):
+        Supported formats:
+        - 'html': returns an HTML fragment; wrap to a full page if page=True
+        - 'csv': returns CSV text (no index)
+        - 'json': returns JSON (records orientation)
+        - 'latex': returns LaTeX tabular code
+
+        Errors:
+        - VisualizerException on unsupported format or empty result in strict mode.
+        """
+        fmt = output_format.lower()
+        opts = {**self._default_render_options, **(render_options or {})}
+
+        if spec.empty and self._strict:
+            raise VisualizerException("TableVisualizer: empty result (no rows in selected range).")
+
+        if fmt == "html":
+            frag = spec.to_html(**({"index": False, "escape": True} | opts))
+            return self._wrap_html_page(frag, "TableVisualizer") if self._page else frag
+
+        if fmt == "csv":
+            return spec.to_csv(**({"index": False} | opts))
+
+        if fmt == "json":
+            return spec.to_json(**({"orient": "records"} | opts))
+
+        if fmt == "latex":
+            return spec.to_latex(**({"index": False, "escape": True} | opts))
+
+        raise VisualizerException(f"Unsupported table output format: {fmt}")
+
+    def visualize(
+        self,
+        cas: Cas,
+        *,
+        start: int = 0,
+        end: int = -1,
+        output_format: str = "html",
+    ) -> str:
+        """Convenience wrapper: build + render."""
+        spec = self.build(cas, start=start, end=end)
+        return self.render(spec, output_format=output_format)
+
+
+# ---------- Span visualizer ----------
+
+class SpacySpanVisualizer(Visualizer):
+    """
+    Span visualization using spaCy’s displaCy.
+
+    Modes:
+    - HIGHLIGHT: render entity-like colored spans via EntityRenderer
+    - UNDERLINE: render underlined spans via SpanRenderer (token-based)
+
+    Notes:
+    - displaCy’s color map is keyed by label strings only, so different types with the same label share colors.
+      To avoid collisions, prefer unique labels across types.
+    """
+    HIGHLIGHT: str = "HIGHLIGHT"
+    UNDERLINE: str = "UNDERLINE"
+
+    def __init__(
+        self,
+        ts: str | Path | TypeSystem,
+        span_type: str | None = None,
+        types: list[str] | None = None,
+        *,
+        page: bool = False,
+        strict: bool = True,
+    ):
         super().__init__(ts)
-        self._span_types: list[str] = [SpanVisualizer.HIGHLIGHT, SpanVisualizer.UNDERLINE]
-        self._selected_span_type = SpanVisualizer.UNDERLINE
+        self._span_types: list[str] = [SpacySpanVisualizer.HIGHLIGHT, SpacySpanVisualizer.UNDERLINE]
+        self._selected_span_type = SpacySpanVisualizer.UNDERLINE
         if span_type is not None:
             self.selected_span_type = span_type
         self._allow_highlight_overlap = False
+        self._page = page
+        self._strict = strict
         if types is not None:
             for type_name in types:
                 self.add_type(type_name)
 
     @property
     def selected_span_type(self) -> str:
+        """Current visualization mode: 'HIGHLIGHT' or 'UNDERLINE'."""
         return self._selected_span_type
 
     @selected_span_type.setter
     def selected_span_type(self, value: str) -> None:
         if value not in self._span_types:
-            raise VisualizerException(f'Invalid span type: {value}. Expected one of {self._span_types}')
+            raise VisualizerException(f"Invalid span type: {value}. Expected one of {self._span_types}")
         self._selected_span_type = value
 
     @property
     def allow_highlight_overlap(self) -> bool:
+        """Whether overlapping highlights are allowed (HIGHLIGHT mode)."""
         return self._allow_highlight_overlap
 
     @allow_highlight_overlap.setter
-    def allow_highlight_overlap(self, value:bool):
+    def allow_highlight_overlap(self, value: bool):
         self._allow_highlight_overlap = value
 
-    def visualize(self, cas: Cas):
-        match self.selected_span_type:
-            case SpanVisualizer.HIGHLIGHT:
-                return self._parse_ents(cas)
-            case SpanVisualizer.UNDERLINE:
-                return self._parse_spans(cas)
-            case _:
-                raise VisualizerException('Invalid span type')
+    # ------------- build / render / visualize -------------
 
-    def get_label(self, fs: FeatureStructure, annotation_type: str) -> Optional[str]:
-        annotation_feature = self.types_to_features.get(annotation_type)
-        feature_value = self._get_feature_value(fs=fs, feature_name=annotation_feature)
-        default_label = self.values_to_labels.get((annotation_type, annotation_feature, feature_value))
-        if default_label:
-            return default_label
-        return str(feature_value) if feature_value is not None else self.types_to_labels.get(annotation_type)
+    def build(
+        self,
+        cas: Cas,
+        *,
+        start: int = 0,
+        end: int = -1,
+    ) -> dict[str, Any]:
+        """
+        Build a displaCy spec for the selected span visualization.
 
-    def get_color(self, annotation_type, label):
-        label_color = self.features_to_colors.get((annotation_type, label))
-        return label_color if label_color else self.types_to_colors.get(annotation_type)
+        Returns:
+        - HIGHLIGHT: {'mode': 'HIGHLIGHT', 'text': str, 'ents': list[dict], 'colors': dict[label, color]}
+        - UNDERLINE: {'mode': 'UNDERLINE', 'token_texts': list[str], 'spans': list[dict], 'colors': dict[label, color]}
 
-    def _parse_ents(self, cas: Cas):  # see parse_ents spaCy/spacy/displacy/__init__.py
-        tmp_ents = []
-        labels_to_colors = dict()
-        for annotation_type in self.type_list:
-            for fs in cas.select(annotation_type):
-                label = self.get_label(fs, annotation_type)
-                color = self.get_color(annotation_type, label)
-                if color:
-                    # a color is required for each annotation
-                    tmp_ents.append(
-                        {
-                            "start": fs.begin,
-                            "end": fs.end,
-                            "label": label,
-                        }
-                    )
-                    labels_to_colors[label] = color
-        tmp_ents.sort(key=lambda x: (x['start'], x['end']))
+        Errors:
+        - VisualizerException if overlapping highlights are detected (and overlap not allowed) or no content in strict mode.
+        """
+        if end == -1:
+            end = len(cas.sofa_string)
 
-        if not self._allow_highlight_overlap and self._check_overlap(tmp_ents):
-            raise VisualizerException(
-                'The highlighted annotations are overlapping. Choose a different set of annotations or set the allow_highlight_overlap parameter to True.')
+        if self.selected_span_type == SpacySpanVisualizer.HIGHLIGHT:
+            tmp_ents: list[dict[str, Any]] = []
+            labels_to_colors: dict[str, str] = {}
+            for annotation_type in self.list_types():
+                for fs in cas.select(annotation_type):
+                    if fs.begin < start or fs.end > end:
+                        continue
+                    label = self.resolve_label(fs, annotation_type)
+                    color = self.resolve_color(annotation_type, label)
+                    if color:
+                        tmp_ents.append({"start": fs.begin, "end": fs.end, "label": label})
+                        labels_to_colors[label] = color
 
-        return EntityRenderer({"colors": labels_to_colors}).render_ents(cas.sofa_string, tmp_ents, "")
+            sorted_ents = sorted(tmp_ents, key=lambda x: (x["start"], x["end"]))
+            if not self._allow_highlight_overlap and self._check_overlap(sorted_ents):
+                raise VisualizerException(
+                    "Highlighted annotations are overlapping. Choose a different set of annotations "
+                    "or set allow_highlight_overlap=True."
+                )
+            if self._strict and not sorted_ents:
+                raise VisualizerException(
+                    f"No entities found for configured types {self.list_types()} in range [{start}, {end}]."
+                )
 
-    # requires a sorted list of "tmp_ents" as returned by tmp_ents.sort(key=lambda x: (x['start'], x['end']))
+            return {
+                "mode": SpacySpanVisualizer.HIGHLIGHT,
+                "text": cas.sofa_string,
+                "ents": sorted_ents,
+                "colors": labels_to_colors,
+            }
+
+        elif self.selected_span_type == SpacySpanVisualizer.UNDERLINE:
+            selected_annotations = [
+                item for typeclass in self.list_types() for item in cas.select(typeclass)
+                if item.begin >= start and item.end <= end
+            ]
+            if self._strict and not selected_annotations:
+                raise VisualizerException(
+                    f"No spans found for configured types {self.list_types()} in range [{start}, {end}]."
+                )
+
+            tmp_tokens = self._split_text_for_spans(cas.sofa_string, selected_annotations)
+            tmp_token_texts = [_["text"] for _ in sorted(tmp_tokens, key=lambda t: t["start"])]
+
+            tmp_spans: list[dict[str, Any]] = []
+            labels_to_colors: dict[str, str] = {}
+            for annotation_type in self.list_types():
+                for tmp_span in self._create_spans(
+                    cas=cas, cas_sofa_tokens=tmp_tokens, annotation_type=annotation_type, start=start, end=end
+                ):
+                    label = tmp_span["label"]
+                    color = self.resolve_color(annotation_type, label)
+                    if color is not None:
+                        labels_to_colors[label] = color
+                        tmp_spans.append(tmp_span)
+
+            tmp_spans.sort(key=lambda x: x["start"])
+            if self._strict and not tmp_spans:
+                raise VisualizerException(
+                    f"No underline spans could be created for configured types {self.list_types()} in range [{start}, {end}]."
+                )
+
+            return {
+                "mode": SpacySpanVisualizer.UNDERLINE,
+                "token_texts": tmp_token_texts,
+                "spans": tmp_spans,
+                "colors": labels_to_colors,
+            }
+
+        else:
+            raise VisualizerException("Invalid span type")
+
+    def render(
+        self,
+        spec: dict[str, Any],
+        *,
+        output_format: str = "html",
+    ) -> str:
+        """
+        Render the built spec using spaCy’s displaCy.
+
+        Supported formats:
+        - 'html' only (returns a string). Set page=True to get a full HTML document.
+
+        Errors:
+        - VisualizerException on unsupported format or invalid spec mode.
+        """
+        fmt = output_format.lower()
+        if fmt != "html":
+            raise VisualizerException("SpacySpanVisualizer supports only 'html' output_format")
+
+        mode = spec.get("mode")
+        if mode == SpacySpanVisualizer.HIGHLIGHT:
+            frag = EntityRenderer({"colors": spec["colors"]}).render_ents(spec["text"], spec["ents"], "")
+        elif mode == SpacySpanVisualizer.UNDERLINE:
+            frag = SpanRenderer({"colors": spec["colors"]}).render_spans(spec["token_texts"], spec["spans"], "")
+        else:
+            raise VisualizerException("Invalid spec: missing or unknown mode")
+
+        return self._wrap_html_page(frag, "SpanVisualizer") if self._page else frag
+
+    def visualize(
+        self,
+        cas: Cas,
+        *,
+        start: int = 0,
+        end: int = -1,
+        output_format: str = "html",
+    ) -> str:
+        """Convenience: build + render (returns str)."""
+        spec = self.build(cas, start=start, end=end)
+        return self.render(spec, output_format=output_format)
+
+    # ------------- private helpers -------------
+
     @staticmethod
-    def _check_overlap(sorted_ents: list[dict]) -> bool:
-        max_end = -1
+    def _check_overlap(sorted_ents: list[dict[str, Any]]) -> bool:
+        """
+        Detect overlap in a list of spans sorted by (start, end).
+        Returns True if any span starts before the previous one ended.
+        """
+        prev_end = -1
         for ent in sorted_ents:
-            s = ent['start']
-            e = ent['end']
-            if s < max_end:
+            if ent["start"] < prev_end:
                 return True
-            if e > max_end:
-                max_end = e
+            prev_end = max(prev_end, ent["end"])
         return False
 
     @staticmethod
     def _split_text_for_spans(
         cas_sofa_string: str,
-        feature_structures: list[FeatureStructure]
+        feature_structures: list[FeatureStructure],
     ) -> list[dict[str, int | str]]:
+        """
+        Split text at annotation boundaries and after whitespace to build token-like chunks for SpanRenderer.
+        Returns list of dicts: {start, end, text}.
+        """
         cutting_points = {fs.begin for fs in feature_structures} | {fs.end for fs in feature_structures}
         cutting_points |= {i + 1 for i, ch in enumerate(cas_sofa_string) if ch.isspace()}
 
@@ -284,7 +627,7 @@ class SpanVisualizer(Visualizer):
         for i in range(len(points) - 1):
             start, end = points[i], points[i + 1]
             if start == end:
-                continue # skip empty tokens
+                continue
             tokens.append({"start": start, "end": end, "text": cas_sofa_string[start:end]})
 
         return tokens
@@ -292,20 +635,31 @@ class SpanVisualizer(Visualizer):
     def _create_spans(
         self,
         cas: Cas,
-        cas_sofa_tokens: list[dict[str, int|str|None]],
+        cas_sofa_tokens: list[dict[str, int | str]],
         annotation_type: str,
-    ) -> list[dict[str, int|str|None]]:
+        *,
+        start: int,
+        end: int,
+    ) -> list[dict[str, int | str | None]]:
+        """
+        Project annotation character offsets onto token indices for the SpanRenderer.
 
+        Returns dicts with:
+        - start/end (char offsets),
+        - start_token/end_token (token indices),
+        - label (resolved via type configuration).
+        """
         start_idx = {tok["start"]: i for i, tok in enumerate(cas_sofa_tokens)}
-        end_idx_next = {tok["end"]: i + 1 for i, tok in enumerate(cas_sofa_tokens)}  # exklusives Ende
+        end_idx_next = {tok["end"]: i + 1 for i, tok in enumerate(cas_sofa_tokens)}  # exclusive end
 
-        spans: list[dict[str, int|str|None]] = []
+        spans: list[dict[str, int | str | None]] = []
         for fs in cas.select(annotation_type):
+            if fs.begin < start or fs.end > end:
+                continue
             try:
-                start = start_idx[fs.begin]
-                end = end_idx_next[fs.end]
+                start_tok = start_idx[fs.begin]
+                end_tok = end_idx_next[fs.end]
             except KeyError as e:
-                # Grenzen nicht exakt auf Tokens -> lieber explizit fehlschlagen
                 raise VisualizerException(
                     f"Annotation [{fs.begin}, {fs.end}] of type {annotation_type} "
                     f"does not align with token boundaries."
@@ -315,130 +669,147 @@ class SpanVisualizer(Visualizer):
                 {
                     "start": fs.begin,
                     "end": fs.end,
-                    "start_token": start,
-                    "end_token": end,
-                    "label": self.get_label(fs, annotation_type),
+                    "start_token": start_tok,
+                    "end_token": end_tok,
+                    "label": self.resolve_label(fs, annotation_type),
                 }
             )
         return spans
 
-    def _parse_spans(self, cas: Cas) -> str:  # see parse_ents spaCy/spacy/displacy/__init__.py
-        selected_annotations = [item for typeclass in self.type_list for item in cas.select(typeclass)]
-        tmp_tokens = self._split_text_for_spans(cas.sofa_string, selected_annotations)
-        tmp_token_texts = [_["text"] for _ in sorted(tmp_tokens, key=lambda t: t["start"])]
 
-        tmp_spans = []
-        labels_to_colors = dict()
-        for annotation_type in self.type_list:
-            for tmp_span in self._create_spans(cas=cas, cas_sofa_tokens=tmp_tokens, annotation_type=annotation_type):
-                label = tmp_span["label"]
-                color = self.get_color(annotation_type, label)
-                if color is not None:
-                    # remove spans without a color from list
-                    labels_to_colors[label] = color
-                    tmp_spans.append(tmp_span)
-        tmp_spans.sort(key=lambda x: x["start"])
-        return SpanRenderer({"colors": labels_to_colors}).render_spans(tmp_token_texts, tmp_spans, "")
+# ---------- Dependency visualizer ----------
 
 class SpacyDependencyVisualizer(Visualizer):
+    """
+    Dependency visualization inside sentence spans using spaCy’s displaCy.
 
-    # TODO not sure that having defaults makes sense here. It is even a mix of DKPro and DAKODA types
-    # perhaps these should be removed and the user has to provide them explicitly
-    # 
-    T_DEPENDENCY = 'org.dakoda.syntax.UDependency'
-    T_POS = 'de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS'
-    T_SENTENCE = 'de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence'
+    Contract:
+    - build: produce a list of per-sentence specs [{'words': [...], 'arcs': [...]}]
+    - render: 'html' → one HTML string (multiple sentences supported),
+              'svg'  → one SVG string (requires exactly one sentence/spec)
+    - visualize: build + render (returns str)
 
-    output_formats = Literal['html', 'svg', 'pdf', 'png']
-
-    def __init__(self, ts: TypeSystem,
-                 dep_type: str = T_DEPENDENCY,
-                 pos_type: str = T_POS,
-                 span_type: str = T_SENTENCE,
-                 ):
-        """
-
-        :param ts: TypeSystem to use.
-        :param dep_type: Type used to determine the dependencies.
-        :param pos_type: Type used to determine the part-of-speech.
-        :param span_type: Type used to determine the spans.
-        """
+    Strict mode:
+    - If strict=True and there are no sentences or no tokens/arcs, build() raises VisualizerException.
+    """
+    def __init__(
+        self,
+        ts: TypeSystem | Path | str,
+        dep_type: str,
+        pos_type: str,
+        span_type: str,
+        *,
+        minify: bool = False,
+        options: Dict[str, Any] | None = None,
+        page: bool = False,
+        strict: bool = True,
+    ):
         super().__init__(ts)
         self._dep_type = dep_type
         self._pos_type = pos_type
         self._span_type = span_type
-
-    def visualize(self, cas: Cas,
-                  minify: bool = False,
-                  options: Optional[Dict[str, Any]] = None,
-                  page: bool = False,
-                  start: int = 0,
-                  end: int = -1,
-                  output_format: OutputFormat = 'html',
-                  ):
-        """
-
-        :param cas: CAS object to visualize.
-        :param minify: optionally, minifies HTML markup.
-        :param options: optionally, specifies parameters for spacy rendering. Supported options are: fine_grained,
-            add_lemma, collapse_punct, collapse_phrases, compact, color, bg, font, offset_x, arrow_stroke, arrow_width,
-            arrow_spacing, word_spacing, distance
-        :param page: optionally, render parses wrapped as full HTML page.
-        :param start: optionally, specifies starting position of spans.
-        :param end: optionally, specifies ending position of spans.
-        :param view_name: optionally, specifies name of the view being rendered.
-        :param output_format: optionally, specifies output format. Supported options: html, pdf, svg, html.
-        :return: dependency graph as specified by output_format.
-        """
         self._minify = minify
         self._options = options or {}
-        self._output_format = output_format
         self._page = page
-        self._span_range = [start, end]
-        if end > -1 and start > end:
-            raise VisualizerException(f'Given span range [start={start}, end={end}] is not valid.')
-        
-        parsed = []
+        self._strict = strict
+
+    def build(self, cas: Cas, *, start: int = 0, end: int = -1) -> list[dict[str, Any]]:
+        """
+        Build displaCy specs for all sentence spans within [start, end].
+
+        Returns:
+        - list of dicts, one per sentence: {'words': [...], 'arcs': [...]}
+
+        Errors:
+        - VisualizerException if no sentence spans found or (in strict mode) no tokens/arcs.
+        """
+        if end == -1:
+            end = len(cas.sofa_string)
+        if end >= 0 and start > end:
+            raise VisualizerException(f"Given span range [start={start}, end={end}] is not valid.")
+
+        parsed: list[dict[str, Any]] = []
+        for sent in cas.select(self._span_type):
+            if sent.begin >= start and sent.end <= end:
+                struct = self._dep_to_dict(cas=cas, covered=sent)
+                parsed.append({"words": struct["words"], "arcs": struct["arcs"]})
+
+        if not parsed:
+            raise VisualizerException(f"No spans found for type {self._span_type} in range [{start}, {end}].")
+
+        total_words = sum(len(p.get("words", [])) for p in parsed)
+        total_arcs = sum(len(p.get("arcs", [])) for p in parsed)
+        if self._strict and (total_words == 0 or total_arcs == 0):
+            raise VisualizerException(
+                f"DependencyVisualizer: nothing to render (words={total_words}, arcs={total_arcs}) "
+                f"in range [{start}, {end}]."
+            )
+
+        return parsed
+
+    def render(
+        self,
+        spec: list[dict[str, Any]],
+        *,
+        output_format: str = "html",
+    ) -> str:
+        """
+        Render the displaCy spec.
+
+        Supported formats:
+        - 'html': returns an HTML fragment combining all sentence specs; wrap to full page if page=True.
+        - 'svg': returns a single SVG string; exactly one spec required.
+
+        Errors:
+        - VisualizerException on unsupported format or if 'svg' is requested for multiple sentences.
+        """
+        fmt = output_format.lower()
         renderer = DependencyRenderer(options=self._options)
-        span_start = self._span_range[0]
-        span_end = self._span_range[1]
-        if span_end == -1:
-            span_end = len(cas.sofa_string)
-        for item in cas.select(self._span_type):
-            if self._span_range is None or (item.begin >= span_start and item.end <= span_end):
-                struct = self._dep_to_dict(cas=cas, covered=item)
-                parsed.append({"words": struct['words'], "arcs": struct['arcs']})
 
-        if len(parsed) == 0:
-            raise VisualizerException(f'No spans found for type {self._span_type} in range {self._span_range}.')
+        if fmt == "html":
+            frag = renderer.render(spec, page=False, minify=self._minify)
+            return self._wrap_html_page(frag, "DependencyVisualizer") if self._page else frag
 
-        match self._output_format:
-            case 'html':
-                return renderer.render(parsed, page=self._page, minify=self._minify)
-            case 'svg':
-                rendered = []
-                for i, p in enumerate(parsed):
-                    svg = renderer.render_svg(f"render_id-{i}", p["words"], p["arcs"])
-                    rendered.append(svg)
-                return rendered
-            case _:
-                raise VisualizerException(f'Output format {self._output_format} is not yet supported.')
+        if fmt == "svg":
+            if len(spec) != 1:
+                raise VisualizerException(
+                    f"SVG output supports exactly one spec; got {len(spec)}. "
+                    f"Render per sentence (build → choose one), or use output_format='html' for multiple sentences."
+                )
+            p = spec[0]
+            return renderer.render_svg("render_id-0", p["words"], p["arcs"])
 
-    def _dep_to_dict(self, cas: Cas, covered: FeatureStructure):
+        raise VisualizerException(f"Output format {output_format} is not supported.")
 
+    def visualize(
+        self,
+        cas: Cas,
+        *,
+        start: int = 0,
+        end: int = -1,
+        output_format: str = "html",
+    ) -> str:
+        """Convenience: build + render (returns str)."""
+        spec = self.build(cas, start=start, end=end)
+        return self.render(spec, output_format=output_format)
+
+    def _dep_to_dict(self, cas: Cas, covered: FeatureStructure) -> dict[str, Any]:
+        """
+        Build a displaCy-compatible structure for one sentence.
+
+        Returns:
+        - dict with 'words' (tokens with POS) and 'arcs' (dependencies with direction/labels).
+        """
         covered_pos = list(cas.select_covered(self._pos_type, covering_annotation=covered))
         offset_to_index = {p.begin: i for i, p in enumerate(covered_pos)}
 
         words = [
-            {
-                'text': p.get_covered_text(),
-                'tag': p.PosValue
-            }
+            {"text": p.get_covered_text(), "tag": getattr(p, "PosValue", None)}
             for p in covered_pos
         ]
 
         cbegin, cend = covered.begin, covered.end
-        arcs = []
+        arcs: list[dict[str, Any]] = []
         for d in cas.select(self._dep_type):
             gb = d.Governor.begin
             db = d.Dependent.begin
@@ -446,20 +817,17 @@ class SpacyDependencyVisualizer(Visualizer):
                 if gb in offset_to_index and db in offset_to_index:
                     start_idx = offset_to_index[gb]
                     end_idx = offset_to_index[db]
-                    arcs.append({
-                        'start': start_idx,
-                        'end': end_idx,
-                        'label': d.DependencyType,
-                        'dir': 'right' if gb < db else 'left',
-                    })
-
-        # ensure that start is always smaller than end
-        # i.e. direction is only encoded in 'dir' field
-        for arc in arcs:
-            if arc['start'] > arc['end']:
-                arc['start'], arc['end'] = arc['end'], arc['start']
-
-        # remove root (i.e. keep everything except root where start == end)
-        arcs = [arc for arc in arcs if arc['start'] != arc['end']]
+                    dir_ = "right" if gb <= db else "left"
+                    # Normalize to start <= end; keep direction in 'dir'
+                    if start_idx > end_idx:
+                        start_idx, end_idx = end_idx, start_idx
+                    # Avoid self-loops
+                    if start_idx != end_idx:
+                        arcs.append({
+                            "start": start_idx,
+                            "end": end_idx,
+                            "label": d.DependencyType,
+                            "dir": dir_,
+                        })
 
         return {"words": words, "arcs": arcs}

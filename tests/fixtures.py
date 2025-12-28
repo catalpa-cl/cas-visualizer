@@ -1,10 +1,11 @@
 import pytest
+from pathlib import Path
 from cassis import Cas
-from cas_visualizer.util import load_typesystem
+from cas_visualizer.util import ensure_typesystem
 
 @pytest.fixture(scope='module')
 def typesystem():
-    return load_typesystem('data/dakoda_typesystem.xml')
+    return ensure_typesystem(Path(__file__).parent.parent / 'data' / 'dakoda_typesystem.xml')
 
 @pytest.fixture()
 def cas_single_sentence(typesystem):

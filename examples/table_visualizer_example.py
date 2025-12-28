@@ -1,23 +1,27 @@
 import tempfile
 import webbrowser
-
-from cas_visualizer.util import cas_from_string, load_typesystem
+from pathlib import Path
+from cas_visualizer.util import ensure_cas, ensure_typesystem
 from cas_visualizer.visualizer import TableVisualizer
 
-ts = load_typesystem('../data/TypeSystem.xml')
+ts = ensure_typesystem(Path(__file__).parent.parent / 'data' / 'TypeSystem.xml')
 
 table_vis = TableVisualizer(ts)
-
-table_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity')
+table_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity', feature='value')
 table_vis.add_type(name='de.tudarmstadt.ukp.dkpro.core.api.anomaly.type.GrammarAnomaly', feature='description')
 
+cas = ensure_cas(Path(__file__).parent.parent / 'data' / 'hagen.txt.xmi', ts)
 
-cas = cas_from_string('../data/hagen.txt.xmi', ts)
-html = table_vis.visualize(cas).reset_index(drop=True).to_html()
+# Build DataFrame
+df = table_vis.build(cas)
+df = df.reset_index(drop=True)
 
-### render HTML in Browser
+# Export to HTML via the visualizer (respects default_render_options) or via pandas
+html = table_vis.render(df, output_format='html')
+# alternatively: html = df.to_html(index=False, escape=True)
 
-with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='cp1252') as f:
-    url = 'file://' + f.name
+# Render HTML in Browser
+with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='utf-8') as f:
     f.write(html)
+    url = 'file://' + f.name
 webbrowser.open(url)

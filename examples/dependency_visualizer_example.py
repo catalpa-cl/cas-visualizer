@@ -1,23 +1,63 @@
 import tempfile
 import webbrowser
 
-from cas_visualizer.util import cas_from_string, load_typesystem
+from pathlib import Path
+from cas_visualizer.util import ensure_cas, ensure_typesystem
 from cas_visualizer.visualizer import SpacyDependencyVisualizer
 
-ts = load_typesystem('../data/dakoda_typesystem.xml')
+# Load TypeSystem
+ts = ensure_typesystem(Path(__file__).parent.parent / 'data' / 'dakoda_typesystem.xml')
 
-dep_vis = SpacyDependencyVisualizer(ts)
+# Specify CAS type names used by the dependency visualizer
+DEP = 'org.dakoda.syntax.UDependency'
+POS = 'de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS'
+SENT = 'de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence'
 
-cas = cas_from_string('../data/SWI03_fD_Mo107_c.xmi', ts).get_view('ctok')
+# Construct the visualizer (no per-call options; set them here if needed)
+dep_vis = SpacyDependencyVisualizer(
+    ts,
+    dep_type=DEP,
+    pos_type=POS,
+    span_type=SENT,
+    # renderer-specific options live in the constructor
+    # minify=False, page=False, options=None by default
+)
+
+# Load CAS and select a view
+cas = ensure_cas(Path(__file__).parent.parent / 'data' / 'SWI03_fD_Mo107_c.xmi', ts).get_view('ctok')
+
+# Visualize: default range (start=0, end=-1) and format (html)
 html = dep_vis.visualize(cas)
-html = dep_vis.visualize(cas, start=0)
-html = dep_vis.visualize(cas, start= 0, end=100, options = {'color':'blue', 'compact':True})
 
-svg = dep_vis.visualize(cas, start= 0, end=-1, output_format='svg')[0]
+# Visualize with explicit start
+html_start = dep_vis.visualize(cas, start=0)
 
-### render HTML in Browser
+# Visualize with a limited range; options are not passed here anymore
+html_range = dep_vis.visualize(cas, start=0, end=100)
 
-with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='cp1252') as f:
-    url = 'file://' + f.name
+# If you need renderer options (color, compact), create another visualizer with options
+dep_vis_blue = SpacyDependencyVisualizer(
+    ts,
+    dep_type=DEP,
+    pos_type=POS,
+    span_type=SENT,
+    options={'color': 'blue', 'compact': True},
+    minify=True,   # optional
+    page=False,    # optional
+)
+html_blue = dep_vis_blue.visualize(cas, start=0, end=100)
+
+# Visualize to SVG (returns a list of SVG strings)
+svg_list = dep_vis.visualize(cas, start=0, end=-1, output_format='svg')
+svg = svg_list[0]
+
+# Alternatively: build → render explicitly
+spec = dep_vis.build(cas, start=0, end=100)
+html_from_spec = dep_vis.render(spec, output_format='html')
+svgs_from_spec = dep_vis.render(spec, output_format='svg')
+
+# Render HTML in browser
+with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='utf-8') as f:
     f.write(html)
+    url = 'file://' + f.name
 webbrowser.open(url)
