@@ -23,5 +23,5 @@ html = table_vis.render(df, output_format='html')
 # Render HTML in Browser
 with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='utf-8') as f:
     f.write(html)
-    url = 'file://' + f.name
+    url = Path(f.name).as_uri()
 webbrowser.open(url)
