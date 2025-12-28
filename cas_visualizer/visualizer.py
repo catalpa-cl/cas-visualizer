@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import abc
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from itertools import cycle
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 import pandas as pd
 from cassis import Cas, TypeSystem
@@ -1141,3 +1142,319 @@ class DocxSpanVisualizer(Visualizer):
         g = int(hx[2:4], 16)
         b = int(hx[4:6], 16)
         return RGBColor(r, g, b)
+
+# ---------- heatmap visualizer ----------
+
+class HeatmapVisualizer(Visualizer):
+    """
+        Token-level heat map showing where configured annotations occur, one cell per token.
+
+        Visual semantics:
+        - 'binary': a token-cell is filled if any configured annotation overlaps the token.
+        - 'density': a token-cell opacity scales with the number of overlapping annotations.
+
+        Grid geometry:
+        - cols = min(token_count, max_cols); rows = ceil(token_count / cols).
+        - One logical canvas pixel corresponds to one token-cell; CSS scales via pixels-per-cell.
+
+        Parameters:
+        - ts: TypeSystem | Path | str
+        - token_type: fully qualified CAS type name of tokens
+        e.g., "de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Token"
+        - types: list[str] | None
+        CAS annotation types to include in the heat map (use add_type(...) as alternative).
+        - mode: 'binary' | 'density' (default: 'binary')
+        - color_hex: '#RRGGBB' base fill color (default: '#FF4500')
+        - background_hex: '#RRGGBB' background (default: '#FFFFFF')
+        - max_cols: maximum logical columns (default: 200)
+        Lower values make the grid narrower and add more rows for long documents.
+        - cell_px: CSS pixels per logical cell (default: 2)
+        Used when width_px is None.
+        - width_px: optional CSS target width (default: None).
+        If provided, the visualizer adapts pixels-per-cell ≈ floor(width_px / cols) (minimum 1).
+        - page: wrap fragment into a full HTML page (UTF‑8) if True (default: False)
+        - strict: raise when no tokens or no coverage are found (default: True)
+
+        Range semantics:
+        - Only tokens fully inside [start, end) are part of the grid.
+        - An annotation overlaps a token if their half-open intervals intersect:
+        token [t_b, t_e) overlaps fs [f_b, f_e) iff $t_b < f_e$ and $f_b < t_e$.
+        """
+
+    def __init__(
+        self,
+        ts: TypeSystem | Path | str,
+        *,
+        token_type: str,
+        types: List[str] | None = None,
+        mode: str = "binary",
+        color_hex: str = "#FF4500",
+        background_hex: str = "#FFFFFF",
+        max_cols: int = 40,
+        cell_px: int = 2,
+        width_px: int | None = None,
+        page: bool = False,
+        strict: bool = True,
+    ):
+        super().__init__(ts)
+        if not token_type:
+            raise VisualizerException("TokenHeatmapVisualizer: token_type must be provided")
+        self._token_type = token_type
+
+        if mode not in ("binary", "density"):
+            raise VisualizerException("TokenHeatmapVisualizer: mode must be 'binary' or 'density'")
+        self._mode = mode
+
+        if max_cols <= 0:
+            raise VisualizerException("TokenHeatmapVisualizer: max_cols must be > 0")
+        self._max_cols = max_cols
+
+        if cell_px <= 0:
+            raise VisualizerException("TokenHeatmapVisualizer: cell_px must be > 0")
+        self._cell_px = cell_px
+
+        if width_px is not None and width_px <= 0:
+            raise VisualizerException("TokenHeatmapVisualizer: width_px must be > 0 if provided")
+        self._width_px = width_px
+
+        self._color_hex = color_hex
+        self._background_hex = background_hex
+        self._page = page
+        self._strict = strict
+
+        if types:
+            for t in types:
+                self.add_type(t)
+
+    # ---------- build / render / visualize ----------
+
+    def build(
+        self,
+        cas: Cas,
+        *,
+        start: int = 0,
+        end: int = -1,
+    ) -> Dict[str, Any]:
+        """
+        Compute per-token coverage in [start, end) using a difference-array + bisect on token boundaries.
+
+        Returns:
+        - spec dict with grid and painting parameters.
+
+        Errors:
+        - VisualizerException for invalid ranges, no tokens in range, or empty coverage in strict mode.
+        """
+        text_len = len(cas.sofa_string)
+        if end == -1:
+            end = text_len
+        if start < 0 or end < 0 or start > end or end > text_len:
+            raise VisualizerException(
+                f"TokenHeatmapVisualizer: invalid range [{start}, {end}] for document length {text_len}"
+            )
+
+        # Select tokens fully inside the window (begin >= start and end <= end)
+        tokens = [
+            tok for tok in cas.select(self._token_type)
+            if tok.begin >= start and tok.end <= end
+        ]
+        if not tokens:
+            raise VisualizerException(
+                f"TokenHeatmapVisualizer: no tokens of type {self._token_type} found inside range [{start}, {end}]."
+            )
+
+        n = len(tokens)
+        begins = [t.begin for t in tokens]
+        ends = [t.end for t in tokens]
+
+        # Difference array across token indices
+        diff = [0] * (n + 1)
+        have_any_overlap = False
+
+        type_names = self.list_types()
+        if not type_names:
+            raise VisualizerException("TokenHeatmapVisualizer: no annotation types configured. Use add_type(...) first.")
+
+        # For each annotation FS, mark overlapping token indices [li, ri_excl)
+        for type_name in type_names:
+            for fs in cas.select(type_name):
+                # Restrict FS to [start, end) to avoid out-of-window work
+                fb = max(fs.begin, start)
+                fe = min(fs.end, end)
+                if fb >= fe:
+                    continue  # no overlap with window
+
+                # Find first token whose end > fb (left overlap bound)
+                li = bisect_right(ends, fb)
+                # Find first token whose begin >= fe (right-exclusive bound)
+                ri_excl = bisect_left(begins, fe)
+
+                if li < ri_excl:
+                    diff[li] += 1
+                    diff[ri_excl] -= 1
+                    have_any_overlap = True
+
+        # Strict: no overlaps at all
+        if self._strict and not have_any_overlap:
+            raise VisualizerException(
+                f"TokenHeatmapVisualizer: no overlaps found for types {type_names} over tokens in range [{start}, {end}]."
+            )
+
+        # Prefix sum to coverage per token
+        coverage = [0] * n
+        cur = 0
+        max_count = 0
+        for i in range(n):
+            cur += diff[i]
+            coverage[i] = cur
+            if cur > max_count:
+                max_count = cur
+
+        if self._strict and max_count == 0:
+            raise VisualizerException(
+                f"TokenHeatmapVisualizer: nothing to render (no covered tokens) in range [{start}, {end}]."
+            )
+
+        # Grid geometry (logical)
+        cols = min(n, self._max_cols)
+        rows = (n + cols - 1) // cols  # ceil
+
+        # CSS sizing: either fixed cell_px or adapt to width_px
+        if self._width_px is None:
+            css_cell_px = self._cell_px
+            css_width_px = cols * css_cell_px
+        else:
+            css_cell_px = max(1, self._width_px // max(cols, 1))
+            css_width_px = cols * css_cell_px
+        css_height_px = rows * css_cell_px
+
+        r, g, b = self._hex_to_rgb(self._color_hex)
+        br, bg, bb = self._hex_to_rgb(self._background_hex)
+
+        return {
+            "mode": self._mode,
+            "color": [r, g, b],
+            "background": [br, bg, bb],
+            "cols": cols,
+            "rows": rows,
+            "coverage": coverage,   # per-token coverage count
+            "max_count": max_count,
+            "css_cell_px": css_cell_px,
+            "css_width_px": css_width_px,
+            "css_height_px": css_height_px,
+        }
+
+    def render(
+        self,
+        spec: Dict[str, Any],
+        *,
+        output_format: str = "html",
+    ) -> str:
+        """
+        Render the heat map as an HTML fragment with a canvas.
+
+        Supported formats:
+        - 'html' only (returns a string). If page=True, wraps into a full HTML page (UTF‑8).
+        """
+        fmt = output_format.lower()
+        if fmt != "html":
+            raise VisualizerException("TokenHeatmapVisualizer supports only 'html' output_format")
+
+        frag = self._render_canvas_fragment(spec)
+        return self._wrap_html_page(frag, "TokenHeatmapVisualizer") if self._page else frag
+
+    def visualize(
+        self,
+        cas: Cas,
+        *,
+        start: int = 0,
+        end: int = -1,
+        output_format: str = "html",
+    ) -> str:
+        """Convenience: build + render (returns str)."""
+        spec = self.build(cas, start=start, end=end)
+        return self.render(spec, output_format=output_format)
+
+    # ---------- internal helpers ----------
+
+    @staticmethod
+    def _hex_to_rgb(hx: str) -> tuple[int, int, int]:
+        """Parse '#RRGGBB' into (r, g, b)."""
+        s = hx.strip().lstrip("#")
+        if len(s) != 6:
+            return (255, 69, 0)  # default orangered
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+
+    def _render_canvas_fragment(self, spec: Dict[str, Any]) -> str:
+        """Produce an HTML fragment with a canvas and an inline script to paint the token heat map."""
+        import json
+
+        mode = spec["mode"]
+        color = spec["color"]
+        bg = spec["background"]
+        cols = int(spec["cols"])
+        rows = int(spec["rows"])
+        coverage: List[int] = spec["coverage"]
+        max_count = int(spec["max_count"])
+        css_width_px = int(spec["css_width_px"])
+        css_height_px = int(spec["css_height_px"])
+
+        data = {
+            "mode": mode,
+            "color": color,
+            "background": bg,
+            "cols": cols,
+            "rows": rows,
+            "coverage": coverage,
+            "maxCount": max_count,
+        }
+        js_data = json.dumps(data)
+
+        return f"""
+<div style="display:inline-block;border:1px solid #ccc;padding:6px;background:#f9f9f9;">
+  <div style="font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial;">
+    <strong>Token heat map</strong> — cols={cols}, rows={rows}, mode={mode}
+  </div>
+  <canvas id="hm_canvas" width="{cols}" height="{rows}"
+          style="width:{css_width_px}px;height:{css_height_px}px;image-rendering:pixelated;border:1px solid #ddd;"></canvas>
+</div>
+<script>
+(function() {{
+  const data = {js_data};
+  const cvs = document.getElementById('hm_canvas');
+  const ctx = cvs.getContext('2d');
+
+  const cols = data.cols;
+  const rows = data.rows;
+  const cov = data.coverage;
+  const maxC = data.maxCount;
+  const r = data.color[0], g = data.color[1], b = data.color[2];
+  const bg = data.background;
+
+  // Fill background
+  ctx.fillStyle = 'rgb(' + bg[0] + ',' + bg[1] + ',' + bg[2] + ')';
+  ctx.fillRect(0, 0, cvs.width, cvs.height);
+
+  // Draw cells: one logical pixel per token; CSS scales via style width/height
+  let k = 0;
+  for (let y = 0; y < rows; y++) {{
+    for (let x = 0; x < cols; x++) {{
+      if (k >= cov.length) break;
+      const c = cov[k];
+      if (data.mode === 'binary') {{
+        if (c > 0) {{
+          ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.9)';
+          ctx.fillRect(x, y, 1, 1);
+        }}
+      }} else {{
+        if (c > 0 && maxC > 0) {{
+          const alpha = Math.min(0.9, 0.1 + 0.8 * (c / maxC));
+          ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+          ctx.fillRect(x, y, 1, 1);
+        }}
+      }}
+      k++;
+    }}
+  }}
+}})();
+</script>
+""".strip()
