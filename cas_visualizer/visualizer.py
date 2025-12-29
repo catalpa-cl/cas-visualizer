@@ -1156,7 +1156,7 @@ class HeatmapVisualizer(Visualizer):
 
     Row modes:
     - 'flat': grid wraps after max_cols (single token stream).
-    - 'sentence': one row per sentence; each row ends at its sentence boundary (rigged layout).
+    - 'sentence': one row per sentence; each row ends at its sentence boundary (ragged layout).
 
     Grid geometry:
     - flat: cols = min(token_count, max_cols); rows = ceil(token_count / cols).
