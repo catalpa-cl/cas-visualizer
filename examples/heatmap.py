@@ -10,21 +10,39 @@ cas = ensure_cas(Path("data/hagen.txt.xmi"), ts)
 TOKEN = "de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Token"
 NER  = "de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity"
 
-vis = HeatmapVisualizer(
+hm = HeatmapVisualizer(
     ts,
-    token_type=TOKEN,
-    types=[NER],          # annotations to visualize
-    mode="binary",        # or "density"
-    max_cols=40,
-    cell_px=3,
-    width_px=None,        # let cell_px define display size; or set a target width here
-    page=True,
-    strict=True,
+    token_type="de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Token",
+    sentence_type="Sentence",   # short name, falls back to DKPro full path if needed
+    types=["de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity"],
+    row_mode="sentence",
+    cell_px=10,
+    mode="binary",
+    color_hex="#FF4500",         # annotated cells
+    unannotated_hex=None,        # auto-computed contrast
+    background_hex="#FFFFFF",
 )
+hm.add_type("de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity")
+html = hm.visualize(cas, output_format="html")
 
-html = vis.visualize(cas, start=0, end=-1, output_format="html")
 # Render HTML in Browser
 with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='utf-8') as f:
     f.write(html)
+    url = Path(f.name).as_uri()
+webbrowser.open(url)
+
+hm2 = HeatmapVisualizer(
+    ts,
+    token_type="de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Token",
+    row_mode="flat",
+    cell_px=5,
+    mode="density",
+    max_cols=50,
+)
+hm2.add_type("de.tudarmstadt.ukp.dkpro.core.api.ner.type.NamedEntity")
+html2 = hm2.visualize(cas, output_format="html")
+
+with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding='utf-8') as f:
+    f.write(html2)
     url = Path(f.name).as_uri()
 webbrowser.open(url)
