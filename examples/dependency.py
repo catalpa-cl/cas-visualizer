@@ -3,22 +3,21 @@ import webbrowser
 
 from pathlib import Path
 from cas_visualizer.util import ensure_cas, ensure_typesystem
-from cas_visualizer.visualizer import SpacyDependencyVisualizer
+from cas_visualizer.visualizer import SpacyDependencyVisualizer, SpacyDependencyVisualizerConfig
 
 # Load TypeSystem
 ts = ensure_typesystem(Path(__file__).parent.parent / 'data' / 'dakoda_typesystem.xml')
 
-# Specify CAS type names used by the dependency visualizer
-DEP = 'org.dakoda.syntax.UDependency'
-POS = 'de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS'
-SENT = 'de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence'
-
+config = SpacyDependencyVisualizerConfig(
+    dep_type='org.dakoda.syntax.UDependency',
+    pos_type='de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS',
+    span_type='de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence',
+    # feature_config/feature_map can be omitted if defaults match
+)
 # Construct the visualizer (no per-call options; set them here if needed)
 dep_vis = SpacyDependencyVisualizer(
     ts,
-    dep_type=DEP,
-    pos_type=POS,
-    span_type=SENT,
+    config
     # renderer-specific options live in the constructor
     # minify=False, page=False, options=None by default
 )
@@ -38,18 +37,12 @@ html_range = dep_vis.visualize(cas, start=0, end=100)
 # If you need renderer options (color, compact), create another visualizer with options
 dep_vis_blue = SpacyDependencyVisualizer(
     ts,
-    dep_type=DEP,
-    pos_type=POS,
-    span_type=SENT,
+    config,
     options={'color': 'blue', 'compact': True},
     minify=True,   # optional
     page=False,    # optional
 )
-html_blue = dep_vis_blue.visualize(cas, start=0, end=100)
-
-# Visualize to SVG (returns a list of SVG strings)
-svg_list = dep_vis.visualize(cas, start=0, end=-1, output_format='svg')
-svg = svg_list[0]
+html = dep_vis_blue.visualize(cas, start=0, end=100)
 
 # Alternatively: build → render explicitly
 spec = dep_vis.build(cas, start=0, end=100)

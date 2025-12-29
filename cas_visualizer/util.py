@@ -1,3 +1,4 @@
+from cassis.typesystem import TypeSystem
 from pathlib import Path
 from typing import IO, Union
 import io
@@ -75,3 +76,68 @@ def resolve_annotation(annotation_path: str, feature_seperator='/') -> tuple[str
 
     return type_path, feature_path
 
+def suggest_type_name(ts: TypeSystem, query: str) -> str | None:
+    """
+    Inspect the TypeSystem and return the best-matching type name for `query`.
+
+    Ties: prefer shorter last segment, then shorter full path, then lexicographic order.
+
+    Returns:
+      - Best-matching fully qualified type name, or None if the TypeSystem has no types.
+    """
+    q = (query or "").strip()
+    if not q:
+        return None
+
+    names = [t.name if hasattr(t, "name") else str(t) for t in ts.get_types()]
+    if not names:
+        return None
+
+    # If the query looks fully qualified and exists, return it directly
+    if "." in q:
+        try:
+            ts.get_type(q)  # will raise if not present
+            return q
+        except Exception:
+            pass  # fall through to heuristic matching
+
+    q_lower = q.lower()
+
+    def score(tname: str) -> tuple[int, int, int, str]:
+        last = tname.rsplit(".", 1)[-1]
+        last_lower = last.lower()
+
+        # 0: full exact
+        if tname == q:
+            return (0, len(last), len(tname), tname)
+
+        # 1: last exact, case-sensitive 
+        if last == q:
+            return (1, len(last), len(tname), tname)
+
+        # 2: last exact, case-insensitive
+        if last_lower == q_lower:
+            return (2, len(last), len(tname), tname)
+
+        # 3: last endswith(query), case-insensitive
+        if last_lower.endswith(q_lower):
+            return (3, len(last), len(tname), tname)
+
+        # 4: last contains(query) but NOT at start or end!
+        if (
+            q_lower in last_lower 
+            and not last_lower.endswith(q_lower) 
+            and not last_lower.startswith(q_lower)
+        ):
+            return (4, len(last), len(tname), tname)
+
+        # Kein Match für query NUR im Package-Namen!
+        return (9_999, len(last), len(tname), tname)
+
+    best = min(names, key=score)
+    best_score = score(best)[0]
+
+    # If even the best score is the default "no match" score, signal no suggestion
+    if best_score >= 9_999:
+        return None
+    return best

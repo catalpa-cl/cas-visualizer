@@ -680,6 +680,24 @@ class SpacySpanVisualizer(Visualizer):
 
 # ---------- Dependency visualizer ----------
 
+@dataclass
+class DependencyFeatureConfig:
+    # Preferred feature names; defaults target DKPro-like type systems
+    pos_value: str = "PosValue"
+    dep_governor: str = "Governor"
+    dep_dependent: str = "Dependent"
+    dep_label: str = "DependencyType"
+
+@dataclass
+class SpacyDependencyVisualizerConfig:
+    # Type names and feature configuration for extracting POS and dependencies
+    dep_type: str
+    pos_type: str
+    span_type: str
+    feature_config: DependencyFeatureConfig = field(default_factory=DependencyFeatureConfig)  
+    feature_map: Optional[Dict[str, Dict[str, str]]] = None              # per-type feature overrides
+
+
 class SpacyDependencyVisualizer(Visualizer):
     """
     Dependency visualization inside sentence spans using spaCy’s displaCy.
@@ -696,9 +714,7 @@ class SpacyDependencyVisualizer(Visualizer):
     def __init__(
         self,
         ts: TypeSystem | Path | str,
-        dep_type: str,
-        pos_type: str,
-        span_type: str,
+        config: SpacyDependencyVisualizerConfig,
         *,
         minify: bool = False,
         options: Dict[str, Any] | None = None,
@@ -706,13 +722,55 @@ class SpacyDependencyVisualizer(Visualizer):
         strict: bool = True,
     ):
         super().__init__(ts)
-        self._dep_type = dep_type
-        self._pos_type = pos_type
-        self._span_type = span_type
+        self._dep_type = config.dep_type
+        self._pos_type = config.pos_type
+        self._span_type = config.span_type
         self._minify = minify
         self._options = options or {}
         self._page = page
         self._strict = strict
+
+        self._feature_config = config.feature_config
+        self._feature_map = config.feature_map or {}
+
+        # Resolve feature names against the TypeSystem for robust access to attributes
+        self._pos_value_feature = self._resolve_feature_name(
+            self._pos_type,
+            self._feature_map.get(self._pos_type, {}).get("value", self._feature_config.pos_value),
+            candidates=["PosValue", "pos", "value", "coarseValue", "PosTag", "Tag"]
+        )
+        self._dep_governor_feature = self._resolve_feature_name(
+            self._dep_type,
+            self._feature_map.get(self._dep_type, {}).get("governor", self._feature_config.dep_governor),
+            candidates=["Governor", "Head", "gov", "head"]
+        )
+        self._dep_dependent_feature = self._resolve_feature_name(
+            self._dep_type,
+            self._feature_map.get(self._dep_type, {}).get("dependent", self._feature_config.dep_dependent),
+            candidates=["Dependent", "Child", "dep", "child"]
+        )
+        self._dep_label_feature = self._resolve_feature_name(
+            self._dep_type,
+            self._feature_map.get(self._dep_type, {}).get("label", self._feature_config.dep_label),
+            candidates=["DependencyType", "Relation", "RelType", "label", "type", "dependency"]
+        )
+
+    def _resolve_feature_name(self, type_name: str, preferred: str, candidates: list[str]) -> str:
+        # Validate feature existence on the given type; pick the first available name
+        t = self.ts.get_type(type_name)
+        fnames = {f.name for f in t.features}
+        if preferred in fnames:
+            return preferred
+        for cand in candidates:
+            if cand in fnames:
+                return cand
+        if self._strict:
+            raise VisualizerException(
+                f"Feature resolution failed for type '{type_name}'. "
+                f"Tried preferred='{preferred}' and candidates={candidates}."
+            )
+        # Non-strict: return preferred; getattr(...) will then yield None during extraction
+        return preferred
 
     def build(self, cas: Cas, *, start: int = 0, end: int = -1) -> list[dict[str, Any]]:
         """
@@ -804,16 +862,26 @@ class SpacyDependencyVisualizer(Visualizer):
         covered_pos = list(cas.select_covered(self._pos_type, covering_annotation=covered))
         offset_to_index = {p.begin: i for i, p in enumerate(covered_pos)}
 
+        # Extract token text and POS tag using the resolved feature name
         words = [
-            {"text": p.get_covered_text(), "tag": getattr(p, "PosValue", None)}
+            {"text": p.get_covered_text(), "tag": getattr(p, self._pos_value_feature, None)}
             for p in covered_pos
         ]
 
         cbegin, cend = covered.begin, covered.end
         arcs: list[dict[str, Any]] = []
         for d in cas.select(self._dep_type):
-            gb = d.Governor.begin
-            db = d.Dependent.begin
+            # Access governor, dependent, and label via resolved feature names
+            gov = getattr(d, self._dep_governor_feature, None)
+            dep = getattr(d, self._dep_dependent_feature, None)
+            label = getattr(d, self._dep_label_feature, None)
+
+            # Skip dependency if essential features are missing
+            if gov is None or dep is None or label is None:
+                continue
+
+            gb = gov.begin
+            db = dep.begin
             if (cbegin <= gb < cend) and (cbegin <= db < cend):
                 if gb in offset_to_index and db in offset_to_index:
                     start_idx = offset_to_index[gb]
@@ -827,7 +895,7 @@ class SpacyDependencyVisualizer(Visualizer):
                         arcs.append({
                             "start": start_idx,
                             "end": end_idx,
-                            "label": d.DependencyType,
+                            "label": label,
                             "dir": dir_,
                         })
 
