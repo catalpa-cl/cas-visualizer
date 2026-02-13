@@ -144,3 +144,19 @@ def test_render_unsupported_format(typesystem, cas_entities):
     df = tv.build(cas_entities)
     with pytest.raises(VisualizerException):
         _ = tv.render(df, output_format="xlsx")  # unsupported
+
+
+# ------------------------------
+# TableVisualizer (basic)
+# ------------------------------
+
+def test_table_visualizer_visualize_uses_output_format(typesystem, cas_single_sentence):
+    tv = TableVisualizer(typesystem)
+    tv.add_type(T_ENT, feature="value")
+    out = tv.visualize(cas_single_sentence, output_format='json')
+    data = json.loads(out)
+    assert isinstance(data, list)
+    assert len(data) == 2
+    # content sanity
+    texts = {row["text"] for row in data}
+    assert texts == {"saw", "dog"}

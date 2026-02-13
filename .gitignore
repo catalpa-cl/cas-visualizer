@@ -17,3 +17,15 @@ venv.bak/
 poetry.lock
 
 dist
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# IDE
+*.swp
+*.swo
+*~
+.DS_Store
