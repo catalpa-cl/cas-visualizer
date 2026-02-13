@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
-from cassis import Cas
+from cassis import Cas, TypeSystem
 
 from cas_visualizer._base import Visualizer, VisualizerException
 
@@ -20,6 +21,13 @@ class TableVisualizer(Visualizer):
     - render: export the DataFrame as HTML, CSV, JSON, or LaTeX (returns str)
     - visualize: build + render
 
+    Parameters:
+    - ts: TypeSystem or path to TypeSystem file
+    - default_render_options: dict of rendering options passed to render()
+    - default_sort: whether to sort the DataFrame by (begin, end) by default
+    - page: wrap fragment in full HTML page if True
+    - strict: raise when DataFrame is empty if True
+
     Strict mode:
     - If strict=True and the DataFrame is empty, render() raises VisualizerException.
       Otherwise, you may get a valid but empty HTML table/CSV/JSON/LaTeX.
@@ -28,7 +36,7 @@ class TableVisualizer(Visualizer):
         self,
         ts: str | Path | TypeSystem,
         *,
-        default_render_options: Dict[str, Any] | None = None,
+        default_render_options: dict[str, Any] | None = None,
         default_sort: bool = True,
         page: bool = False,
         strict: bool = True,

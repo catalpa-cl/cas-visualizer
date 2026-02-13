@@ -59,14 +59,14 @@ def ensure_cas(
         f"Expected cassis.Cas, str (XMI), bytes, Path, or file-like."
     )
 
-def resolve_annotation(annotation_path: str, feature_seperator='/') -> tuple[str, str]:
-    if feature_seperator == '.':
+def resolve_annotation(annotation_path: str, feature_separator='/') -> tuple[str, str]:
+    if feature_separator == '.':
         raise ValueError('Feature separator must not be "."')
 
-    split = annotation_path.split(feature_seperator)
+    split = annotation_path.split(feature_separator)
 
     if len(split) > 2:
-        raise ValueError(f'Annotation Path is ill defined, as it contains multiple features, seperated by {feature_seperator}')
+        raise ValueError(f'Annotation Path is ill defined, as it contains multiple features, seperated by {feature_separator}')
 
     # no feature in annotation path
     if len(split) == 1:

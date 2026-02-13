@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any
 
-from cassis import Cas
+import pandas as pd
+from cassis import Cas, TypeSystem
+from cassis.typesystem import FeatureStructure
 from udapi.core.document import Document
 from udapi.core.node import Node
 from spacy.displacy import DependencyRenderer
@@ -47,7 +51,7 @@ class DependencyVisualizerConfig:
     pos_type: str
     span_type: str
     feature_config: DependencyFeatureConfig = field(default_factory=DependencyFeatureConfig)  
-    feature_map: Optional[Dict[str, Dict[str, str]]] = None
+    feature_map: dict[str, dict[str, str]] | None = None
 
 class UdapiDependencyVisualizer(Visualizer):
     def build(self, cas: Cas, *, start: int = 0, end: int = -1) -> list[dict]:
@@ -131,6 +135,22 @@ class UdapiDependencyVisualizer(Visualizer):
         return self.render(spec, output_format=output_format)
 
     def build_tree(self, cas: Cas, sent: FeatureStructure) -> Node:
+        """
+        Build a single UDAPI dependency tree from a CAS sentence annotation.
+
+        Converts the CAS representation to CoNLL-U format via _cas_to_str(),
+        then parses it into a UDAPI Document with one bundle (tree).
+
+        Parameters:
+        - cas: the CAS document containing dependency annotations
+        - sent: a FeatureStructure representing the sentence span
+
+        Returns:
+        - UDAPI Node tree root for the sentence
+
+        Raises:
+        - ValueError: if the CoNLL-U representation produces multiple bundles
+        """
         udapi_doc = Document()
         udapi_doc.from_conllu_string(self._cas_to_str(cas, sent))
         if len(udapi_doc.bundles) > 1:
@@ -139,13 +159,41 @@ class UdapiDependencyVisualizer(Visualizer):
         return udapi_doc.bundles[0].get_tree()
 
     def build_trees(self, cas: Cas) -> list[Node]:
+        """
+        Build UDAPI dependency trees for all sentences in a CAS document.
+
+        Iterates over all Sentence annotations and calls build_tree() for each.
+
+        Parameters:
+        - cas: the CAS document containing sentence and dependency annotations
+
+        Returns:
+        - list of UDAPI Node trees, one per sentence
+        """
         forest = []
         for sent in cas.select("de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence"):
             forest.append(self.build_tree(cas, sent))
         return forest
 
     def _cas_to_str(self, cas, sentence):
-        
+        """
+        Convert a CAS sentence to CoNLL-U format string.
+
+        Extracts tokens, lemmas, POS tags, morphology, and dependency relations
+        from the CAS annotations and formats them as a CoNLL-U string.
+
+        Parameters:
+        - cas: the CAS document
+        - sentence: FeatureStructure representing the sentence span
+
+        Returns:
+        - CoNLL-U formatted string for the sentence
+
+        Note:
+        - Uses type names from DependencyVisualizerConfig (T_TOKEN, T_POS, etc.)
+        - Filters empty tokens (whitespace-only annotations)
+        - Handles missing morphology by substituting underscore
+        """
         id_list = []
         form_list = []
         lemma_list = []
@@ -167,35 +215,30 @@ class UdapiDependencyVisualizer(Visualizer):
             if not re.match(r"^\s*$", x.get_covered_text())
         ]
 
-        if len(unfiltered_token_list)!=len(token_list):
-            print("some tokens are empty!")
         form_list = [x.get_covered_text() for x in token_list]
-        print("form_list %s" %(str(form_list)))
 
         orig_id_list = [x.xmiID for x in token_list]
         id_list = list(range(1, len(token_list) + 1))
 
         id_map = dict(zip(orig_id_list, id_list))
-        print("id_map:\n %s" %(id_map))
         lemma_list = [
             #
             x.value for x in cas.select_covered(T_LEMMA, sentence)
         ]
-        pos_list = [x.PosValue for x in cas.select_covered(T_POS, sentence)]
-        morph_list = [x.morphTag for x in cas.select_covered(T_MORPH, sentence)]
+        pos_list = [getattr(x, 'PosValue', '_') for x in cas.select_covered(T_POS, sentence)]
+        morph_list = [getattr(x, 'morphTag', '_') for x in cas.select_covered(T_MORPH, sentence)]
         if len(morph_list) == 0:
             morph_list = ["_"] * len(token_list)
 
-        # TODO why like this?
+        # SpaCy displacy renderer uses hard-coded POS tag "FM" (foreign material)
+        # for all tokens as a default placeholder
         udpos_list = ["FM"] * len(token_list)
 
         enhanced_deps_list = ["_"] * len(token_list)
         #misc_list = ["_"] * len(token_list)
-        print("id_map %s " %(str(id_map)))
         for token in token_list:
             token_id = token.xmiID
-            print("processing token_id %s : %s" %(str(token_id), str(token.get_covered_text())))
-            misc_list.append("t_start="+str(token.begin)+"|"+"t_end="+str(token.end))
+            misc_list.append(f"t_start={token.begin}|t_end={token.end}")
             dep_matches = []
             for dep in deps_list:
                 if (
@@ -206,13 +249,11 @@ class UdapiDependencyVisualizer(Visualizer):
                 else:
                     if dep.Dependent.xmiID == token_id:
                         dep_matches.append(dep)
-                        print("dependency is %s" %(str(dep)))
                         # root node (in Merlin) has its own id as head!
                         if dep.Governor.xmiID == token_id:
                             head_list.append(0)
                             rel_list.append("root")
                         else:
-                            print("dep.Governor.xmiID %s %s" %(str(dep.Governor.xmiID),dep.Governor.get_covered_text()))
                             head_list.append(id_map[dep.Governor.xmiID])
                             rel_list.append(dep.DependencyType)
                     else:
@@ -259,7 +300,6 @@ class UdapiDependencyVisualizer(Visualizer):
         df_str = df.to_csv(index=False, header=False, sep="\t")
         conllu_string = sent_id_line + "\n" + s_text_line + "\n" + df_str
         conllu_string = re.sub("\n{2,}", "\n", conllu_string).strip()
-        print(conllu_string)
         return conllu_string
 
 class SpacyDependencyVisualizer(Visualizer):

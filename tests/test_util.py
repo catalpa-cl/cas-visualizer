@@ -13,7 +13,7 @@ def test_resolve_annotation():
     assert list(resolve_annotation(feature_path)) == ['catalpa.xyz', 'feature']
     
     non_standard_separator = 'catalpa.xyz#feature'
-    assert list(resolve_annotation(non_standard_separator, '#')) == ['catalpa.xyz', 'feature']
+    assert list(resolve_annotation(non_standard_separator, feature_separator='#')) == ['catalpa.xyz', 'feature']
 
     ill_formed = 'catalpa.xyz//feature'
     with pytest.raises(ValueError):

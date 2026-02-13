@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from cassis import Cas, TypeSystem
 
@@ -342,20 +342,41 @@ class HeatmapVisualizer(Visualizer):
 
     @staticmethod
     def _hex_to_rgb(hx: str) -> tuple[int, int, int]:
+        """
+        Parse hex color code to RGB tuple.
+
+        Handles invalid formats by returning default orangered.
+        A warning could be logged here if logging is added.
+
+        Parameters:
+        - hx: hex color string (e.g., '#FF4500')
+
+        Returns:
+        - tuple of (red, green, blue) in range [0-255]
+        """
         s = hx.strip().lstrip("#")
         if len(s) != 6:
-            return (255, 69, 0)  # default orangered
-        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+            # Invalid hex format - return default orangered
+            return (255, 69, 0)
+        try:
+            return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+        except ValueError:
+            # Non-hex characters - return default orangered
+            return (255, 69, 0)
 
     @staticmethod
     def _hex_complement(hx: str) -> str:
         s = hx.strip().lstrip("#")
         if len(s) != 6:
             return "#00B2FF"  # some contrasting default (azure)
-        r = 255 - int(s[0:2], 16)
-        g = 255 - int(s[2:4], 16)
-        b = 255 - int(s[4:6], 16)
-        return f"#{r:02X}{g:02X}{b:02X}"
+        try:
+            r = 255 - int(s[0:2], 16)
+            g = 255 - int(s[2:4], 16)
+            b = 255 - int(s[4:6], 16)
+            return f"#{r:02X}{g:02X}{b:02X}"
+        except ValueError:
+            # Non-hex characters - return default contrasting color
+            return "#00B2FF"
 
     def _render_canvas_fragment(self, spec: Dict[str, Any]) -> str:
         import json

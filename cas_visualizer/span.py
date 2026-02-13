@@ -3,7 +3,11 @@ from __future__ import annotations
 import re
 from bisect import bisect_left, bisect_right
 from pathlib import Path
-from typing import Any, List
+from typing import Any
+
+import pandas as pd
+from cassis import Cas, TypeSystem
+from cassis.typesystem import FeatureStructure
 
 import pandas as pd
 from cassis import Cas

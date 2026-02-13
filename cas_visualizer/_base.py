@@ -4,7 +4,7 @@ import abc
 from dataclasses import dataclass, field
 from itertools import cycle
 from pathlib import Path
-from typing import Any, Dict, Iterator
+from typing import Any, Iterator
 
 from cassis import Cas, TypeSystem
 from cassis.typesystem import FeatureStructure
@@ -44,8 +44,8 @@ class TypeConfig:
     feature: str | None = None
     default_color: str | None = None
     default_label: str | None = None
-    value_labels: Dict[Any, str] = field(default_factory=dict)
-    label_colors: Dict[str, str] = field(default_factory=dict)
+    value_labels: dict[Any, str] = field(default_factory=dict)
+    label_colors: dict[str, str] = field(default_factory=dict)
 
     def label_for_value(self, value: Any) -> str | None:
         """
@@ -90,7 +90,7 @@ class Visualizer(abc.ABC):
     """
     def __init__(self, ts: str | Path | TypeSystem):
         # Registered type configs keyed by full type path
-        self._type_configs: Dict[str, TypeConfig] = {}
+        self._type_configs: dict[str, TypeConfig] = {}
 
         # Default color iterator (cycled, never exhausted)
         color_list = [
