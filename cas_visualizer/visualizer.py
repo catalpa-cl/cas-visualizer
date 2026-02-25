@@ -15,7 +15,13 @@ Examples:
 from cas_visualizer._base import Visualizer, VisualizerException, TypeConfig
 from cas_visualizer.span import SpacySpanVisualizer, DocxSpanVisualizer
 from cas_visualizer.table import TableVisualizer
-from cas_visualizer.dependency import UdapiDependencyVisualizer, SpacyDependencyVisualizer, DependencyVisualizerConfig, DependencyFeatureConfig
+from cas_visualizer.dependency import (
+    UdapiDependencyVisualizer,
+    SpacyDependencyVisualizer,
+    DependencyVisualizerConfig,
+    DependencyFeatureConfig,
+    UdapiTreeConfig,
+)
 from cas_visualizer.heatmap import HeatmapVisualizer
 
 __all__ = [
@@ -29,5 +35,6 @@ __all__ = [
     "SpacyDependencyVisualizer",
     "DependencyVisualizerConfig",
     "DependencyFeatureConfig",
+    "UdapiTreeConfig",
     "HeatmapVisualizer",
 ]

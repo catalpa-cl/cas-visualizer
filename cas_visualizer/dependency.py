@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass, field
+from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 import pandas as pd
 from cassis import Cas, TypeSystem
 from cassis.typesystem import FeatureStructure
 from udapi.core.document import Document
 from udapi.core.node import Node
+from udapi.block.write.textmodetrees import TextModeTrees
 from spacy.displacy import DependencyRenderer
 
 from cas_visualizer._base import Visualizer, VisualizerException
@@ -53,74 +56,126 @@ class DependencyVisualizerConfig:
     feature_config: DependencyFeatureConfig = field(default_factory=DependencyFeatureConfig)  
     feature_map: dict[str, dict[str, str]] | None = None
 
+
+@dataclass
+class UdapiTreeConfig:
+    """Configuration for UDAPI tree visualization.
+    
+    Attributes:
+        attributes: Comma-separated list of node attributes to display (e.g., "ord,form,lemma,upos,deprel")
+        layout: Layout style for TextModeTrees ("align", "compact", etc.)
+        indent: Indentation level (number of spaces)
+        mark: Regex pattern for highlighting specific nodes
+        colorize: Dict mapping attribute names to colorization config.
+                 Format: {attr_name: {value_to_match: [color1, color2, ...]}}
+                 Example: {"misc": {"Yes": ["ADV", "SEP", "SVO"]}, "upos": {"VERB": ["red", "bold"]}}
+    """
+    attributes: str = "ord,form,lemma,upos,deprel"
+    layout: str = "align"
+    indent: int = 2
+    mark: str | None = None
+    colorize: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+
 class UdapiDependencyVisualizer(Visualizer):
-    def build(self, cas: Cas, *, start: int = 0, end: int = -1) -> list[dict]:
+    """Dependency visualization using UDAPI format with TextModeTrees rendering.
+    
+    This class converts CAS annotations to UDAPI trees and renders them as
+    formatted text representations, useful for linguistic analysis and debugging.
+    """
+    def __init__(
+        self,
+        ts: TypeSystem | Path | str,
+        config: DependencyVisualizerConfig,
+        *,
+        tree_config: UdapiTreeConfig | None = None,
+        strict: bool = True,
+    ):
+        super().__init__(ts)
+        self._dep_type = config.dep_type
+        self._pos_type = config.pos_type
+        self._span_type = config.span_type
+        self._strict = strict
+
+        self._feature_config = config.feature_config
+        self._feature_map = config.feature_map or {}
+        
+        self._tree_config = tree_config or UdapiTreeConfig()
+
+    def build(self, cas: Cas, *, start: int = 0, end: int = -1) -> list[Node]:
         """
-        Build displaCy specs for all sentence spans within [start, end].
+        Build UDAPI trees for all sentence spans within [start, end].
 
         Returns:
-        - list of dicts, one per sentence: {'words': [...], 'arcs': [...]}
+        - list of UDAPI Node tree roots, one per sentence
 
         Errors:
-        - VisualizerException if no sentence spans found or (in strict mode) no tokens/arcs.
+        - VisualizerException if no sentence spans found or (in strict mode) on other errors.
         """
         if end == -1:
             end = len(cas.sofa_string)
         if end >= 0 and start > end:
             raise VisualizerException(f"Given span range [start={start}, end={end}] is not valid.")
 
-        parsed: list[dict[str, Any]] = []
+        trees: list[Node] = []
         for sent in cas.select(self._span_type):
-            if sent.begin >= start and sent.end <= end:
-                struct = self._dep_to_dict(cas=cas, covered=sent)
-                parsed.append({"words": struct["words"], "arcs": struct["arcs"]})
+            sent_begin: int = getattr(sent, 'begin', 0)
+            sent_end: int = getattr(sent, 'end', len(cas.sofa_string))
+            if sent_begin >= start and sent_end <= end:
+                tree = self.build_tree(cas, sent)
+                trees.append(tree)
 
-        if not parsed:
+        if not trees:
             raise VisualizerException(f"No spans found for type {self._span_type} in range [{start}, {end}].")
 
-        total_words = sum(len(p.get("words", [])) for p in parsed)
-        total_arcs = sum(len(p.get("arcs", [])) for p in parsed)
-        if self._strict and (total_words == 0 or total_arcs == 0):
-            raise VisualizerException(
-                f"DependencyVisualizer: nothing to render (words={total_words}, arcs={total_arcs}) "
-                f"in range [{start}, {end}]."
-            )
+        return trees
 
-        return parsed
-
-    def render(
-        self,
-        spec: list[dict[str, Any]],
-        *,
-        output_format: str = "html",
-    ) -> str:
+    def render(self, trees: list[Node], *, output_format: str = "text") -> str:
         """
-        Render the displaCy spec.
+        Render UDAPI trees as formatted text using TextModeTrees.
 
-        Supported formats:
-        - 'html': returns an HTML fragment combining all sentence specs; wrap to full page if page=True.
-        - 'svg': returns a single SVG string; exactly one spec required.
+        Parameters:
+        - trees: list of UDAPI Node tree roots
+        - output_format: output format ("text" is the only supported format for UDAPI trees)
+
+        Returns:
+        - formatted text representation of the trees
 
         Errors:
-        - VisualizerException on unsupported format or if 'svg' is requested for multiple sentences.
+        - VisualizerException if unsupported format is requested
         """
         fmt = output_format.lower()
-        renderer = DependencyRenderer(options=self._options)
-
-        if fmt == "html":
-            frag = renderer.render(spec, page=False, minify=self._minify)
-            return self._wrap_html_page(frag, "DependencyVisualizer") if self._page else frag
-
-        if fmt == "svg":
-            if len(spec) != 1:
-                raise VisualizerException(
-                    f"SVG output supports exactly one spec; got {len(spec)}. "
-                    f"Render per sentence (build → choose one), or use output_format='html' for multiple sentences."
-                )
-            p = spec[0]
-            return renderer.render_svg("render_id-0", p["words"], p["arcs"])
-
-        raise VisualizerException(f"Output format {output_format} is not supported.")
+        if fmt != "text":
+            raise VisualizerException(f"Output format '{fmt}' is not supported for UDAPI. Only 'text' is available.")
+        
+        # Create TextModeTrees writer with configured options
+        writer = TextModeTrees(
+            attributes=self._tree_config.attributes,
+            layout=self._tree_config.layout,
+            indent=self._tree_config.indent,
+            mark=self._tree_config.mark,
+        )
+        
+        # Apply colorization settings if configured
+        for attr_name, color_config in self._tree_config.colorize.items():
+            for value_to_match, colors in color_config.items():
+                writer.colorize_attr(attr_name, value_to_match, colors)
+        
+        # Capture output from TextModeTrees to string
+        output_lines = []
+        for i, tree in enumerate(trees):
+            if i > 0:
+                output_lines.append("")  # Blank line between trees
+            
+            # Redirect stdout to capture tree output
+            old_stdout = sys.stdout
+            sys.stdout = buffer = StringIO()
+            try:
+                writer.process_tree(tree)
+                output_lines.append(buffer.getvalue().rstrip())
+            finally:
+                sys.stdout = old_stdout
+        
+        return "\n".join(output_lines)
 
     def visualize(
         self,
@@ -128,11 +183,11 @@ class UdapiDependencyVisualizer(Visualizer):
         *,
         start: int = 0,
         end: int = -1,
-        output_format: str = "html",
+        output_format: str = "text",
     ) -> str:
-        """Convenience: build + render (returns str)."""
-        spec = self.build(cas, start=start, end=end)
-        return self.render(spec, output_format=output_format)
+        """Convenience: build + render (returns formatted tree visualization)."""
+        trees = self.build(cas, start=start, end=end)
+        return self.render(trees, output_format=output_format)
 
     def build_tree(self, cas: Cas, sent: FeatureStructure) -> Node:
         """
@@ -205,10 +260,12 @@ class UdapiDependencyVisualizer(Visualizer):
         enhanced_deps_list = []
         misc_list = []
 
-        deps_list = cas.select(T_DEP)
+        deps_list = cas.select(self._dep_type)
 
         # NB: we need to filter out empty tokens that have no annotations
-        unfiltered_token_list = cas.select_covered(T_TOKEN, sentence)
+        # Assuming token type follows DKPro convention
+        token_type = "de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Token"
+        unfiltered_token_list = cas.select_covered(token_type, sentence)
         token_list = [
             x
             for x in unfiltered_token_list
@@ -221,12 +278,17 @@ class UdapiDependencyVisualizer(Visualizer):
         id_list = list(range(1, len(token_list) + 1))
 
         id_map = dict(zip(orig_id_list, id_list))
+        
+        # Assuming lemma type follows DKPro convention
+        lemma_type = "de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Lemma"
         lemma_list = [
-            #
-            x.value for x in cas.select_covered(T_LEMMA, sentence)
+            x.value for x in cas.select_covered(lemma_type, sentence)
         ]
-        pos_list = [getattr(x, 'PosValue', '_') for x in cas.select_covered(T_POS, sentence)]
-        morph_list = [getattr(x, 'morphTag', '_') for x in cas.select_covered(T_MORPH, sentence)]
+        pos_list = [getattr(x, 'PosValue', '_') for x in cas.select_covered(self._pos_type, sentence)]
+        
+        # Assuming morph type follows DKPro convention
+        morph_type = "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.morph.MorphologicalFeatures"
+        morph_list = [getattr(x, 'morphTag', '_') for x in cas.select_covered(morph_type, sentence)]
         if len(morph_list) == 0:
             morph_list = ["_"] * len(token_list)
 
@@ -393,7 +455,9 @@ class SpacyDependencyVisualizer(Visualizer):
 
         parsed: list[dict[str, Any]] = []
         for sent in cas.select(self._span_type):
-            if sent.begin >= start and sent.end <= end:
+            sent_begin: int = getattr(sent, 'begin', 0)
+            sent_end: int = getattr(sent, 'end', len(cas.sofa_string))
+            if sent_begin >= start and sent_end <= end:
                 struct = self._dep_to_dict(cas=cas, covered=sent)
                 parsed.append({"words": struct["words"], "arcs": struct["arcs"]})
 
@@ -464,7 +528,7 @@ class SpacyDependencyVisualizer(Visualizer):
         - dict with 'words' (tokens with POS) and 'arcs' (dependencies with direction/labels).
         """
         covered_pos = list(cas.select_covered(self._pos_type, covering_annotation=covered))
-        offset_to_index = {p.begin: i for i, p in enumerate(covered_pos)}
+        offset_to_index = {getattr(p, 'begin', 0): i for i, p in enumerate(covered_pos)}
 
         # Extract token text and POS tag using the resolved feature name
         words = [
@@ -472,7 +536,8 @@ class SpacyDependencyVisualizer(Visualizer):
             for p in covered_pos
         ]
 
-        cbegin, cend = covered.begin, covered.end
+        cbegin: int = getattr(covered, 'begin', 0)
+        cend: int = getattr(covered, 'end', len(cas.sofa_string))
         arcs: list[dict[str, Any]] = []
         for d in cas.select(self._dep_type):
             # Access governor, dependent, and label via resolved feature names
@@ -484,8 +549,8 @@ class SpacyDependencyVisualizer(Visualizer):
             if gov is None or dep is None or label is None:
                 continue
 
-            gb = gov.begin
-            db = dep.begin
+            gb = getattr(gov, 'begin', 0)
+            db = getattr(dep, 'begin', 0)
             if (cbegin <= gb < cend) and (cbegin <= db < cend):
                 if gb in offset_to_index and db in offset_to_index:
                     start_idx = offset_to_index[gb]

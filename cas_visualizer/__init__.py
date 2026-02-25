@@ -22,7 +22,12 @@ Main visualizers:
 from cas_visualizer._base import Visualizer, VisualizerException, TypeConfig
 from cas_visualizer.span import SpacySpanVisualizer, DocxSpanVisualizer
 from cas_visualizer.table import TableVisualizer
-from cas_visualizer.dependency import UdapiDependencyVisualizer, SpacyDependencyVisualizer
+from cas_visualizer.dependency import (
+    UdapiDependencyVisualizer,
+    SpacyDependencyVisualizer,
+    DependencyVisualizerConfig,
+    UdapiTreeConfig,
+)
 from cas_visualizer.heatmap import HeatmapVisualizer
 
 __version__ = "0.2.0"
@@ -36,5 +41,7 @@ __all__ = [
     "TableVisualizer",
     "UdapiDependencyVisualizer",
     "SpacyDependencyVisualizer",
+    "DependencyVisualizerConfig",
+    "UdapiTreeConfig",
     "HeatmapVisualizer",
 ]
