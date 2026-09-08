@@ -9,7 +9,7 @@ authors = [
 ]
 readme = "README.md"
 packages = [{include = "cas_visualizer"}]
-repository = "https://github.com/zesch/cas-visualizer"
+repository = "https://github.com/catalpa-cl/cas-visualizer"
 keywords = ["cas", "visualization", "annotation", "nlp", "spacy"]
 classifiers = [
     "Development Status :: 4 - Beta",
